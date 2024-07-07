@@ -260,7 +260,7 @@ class TrajGeneration(Node):
             # print("q_np = {0}".format(q_np))
             # q_np = np.random.uniform(-1.5, 1.5, size=7)
             tc = 1.0/(sampling_rate) * k
-            print("tc = ",tc)
+            # print("tc = ",tc)
             
             q_list = [optas.substitute(id, t, tc) for id in fourier]#fourier(a,b,tc)
             qd_list = [optas.substitute(id, t, tc) for id in fourierDot] #fourierDot(a,b,tc)
@@ -321,7 +321,7 @@ class TrajGeneration(Node):
             for l in range(5):
 
                 # 这里面有变量不对劲k
-                print("iter {0}, {1}".format(i, l))
+                # print("iter {0}, {1}".format(i, l))
                 a_eq1[i] = a_eq1[i] + a[l,i]/(l+1)
                 b_eq1[i] = b_eq1[i] + b[l,i]
                 a_eq2[i] = a_eq2[i] + a[l,i]*(l+1)
@@ -515,7 +515,7 @@ class TrajGeneration(Node):
             # print("q_np = {0}".format(q_np))
             # q_np = np.random.uniform(-1.5, 1.5, size=7)
             tc = 1.0/(sampling_rate) * k
-            print("tc = ",tc)
+            # print("tc = ",tc)
             
             q_list = [optas.substitute(id, t, tc) for id in fourier]#fourier(a,b,tc)
             qd_list = [optas.substitute(id, t, tc) for id in fourierDot] #fourierDot(a,b,tc)
@@ -572,7 +572,7 @@ class TrajGeneration(Node):
         # ab_sq_ineq4 = []
         for i in range(7):
             for l in range(5):
-                print("iter {0}, {1}".format(i, l))
+                # print("iter {0}, {1}".format(i, l))
                 a_eq1[i] = a_eq1[i] + a[l,i]/(l+1)
                 b_eq1[i] = b_eq1[i] + b[l,i]
                 a_eq2[i] = a_eq2[i] + a[l,i]*(l+1)
@@ -773,7 +773,7 @@ class TrajGeneration(Node):
             # print("q_np = {0}".format(q_np))
             # q_np = np.random.uniform(-1.5, 1.5, size=7)
             tc = 1.0/(sampling_rate) * k
-            print("tc = ",tc)
+            # print("tc = ",tc)
             
             q_list = [optas.substitute(id, t, tc) for id in fourier]#fourier(a,b,tc)
             qd_list = [optas.substitute(id, t, tc) for id in fourierDot] #fourierDot(a,b,tc)
@@ -831,7 +831,7 @@ class TrajGeneration(Node):
         # ab_sq_ineq4 = []
         for i in range(7):
             for l in range(5):
-                print("iter {0}, {1}".format(i, l))
+                # print("iter {0}, {1}".format(i, l))
                 a_eq1[i] = a_eq1[i] + a[l,i]/(l+1)
                 b_eq1[i] = b_eq1[i] + b[l,i]
                 a_eq2[i] = a_eq2[i] + a[l,i]*(l+1)

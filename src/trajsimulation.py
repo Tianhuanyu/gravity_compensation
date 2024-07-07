@@ -9,6 +9,7 @@ from ament_index_python import get_package_share_directory
 import rclpy
 from rclpy import qos
 from rclpy.node import Node
+import numpy as np
 
 
 import xml.etree.ElementTree as ET
@@ -18,6 +19,27 @@ import xml.etree.ElementTree as ET
 
 import rospkg
 import xml.etree.ElementTree as ET
+
+def get_axis_torque(axis, torques):
+    # 轴的方向
+    ax, ay, az = axis
+    # 对应的力矩值
+    mx, my, mz = torques
+    
+    # 根据轴方向获取力矩值
+    if ax != 0:
+        return mx if ax > 0 else -mx
+    elif ay != 0:
+        return my if ay > 0 else -my
+    elif az != 0:
+        return mz if az > 0 else -mz
+    else:
+        return 0  # 如果轴方向为 [0, 0, 0]，返回 0
+    
+def calculate_joint_accelerations(joint_velocities_1, joint_velocities_2, delta_time):
+    joint_accelerations = [(v2 - v1) / delta_time for v1, v2 in zip(joint_velocities_1, joint_velocities_2)]
+    return joint_accelerations
+    
 def resolve_package_path(package_path):
     """
     Resolves the absolute path of a ROS package.
@@ -87,7 +109,7 @@ class TrajectoryConductionSim(Node):
         #         )
         # print("RUn to here")
         # p.connect(p.DIRECT)
-        global p
+        # global p
         
 
         p.connect(p.GUI)
@@ -159,29 +181,133 @@ class TrajectoryConductionSim(Node):
                 [float(qi_des) for qi_des in row[1:8]]
             )
 
+    def run_sim_in_workspace(self):
+        
+        # non_fixed_joints = []
+        joint_lower_limit = []
+        joint_upper_limit = []
+
+        for joint_index in range(p.getNumJoints(self.robot_id)):
+            joint_info = p.getJointInfo(self.robot_id, joint_index)
+            joint_type = joint_info[2]
+            if joint_type != p.JOINT_FIXED:
+                # non_fixed_joints += [joint_index]
+                joint_name = joint_info[1].decode('utf-8')
+                joint_lower_limit.append(joint_info[8]) 
+                joint_upper_limit.append(joint_info[9])  
+                # print(f"Joint {joint_name} (index {joint_index}): lower limit = {joint_lower_limit}, upper limit = {joint_upper_limit}")
+
+        # self.non_fixed_joints = non_fixed_joints
+        print(joint_upper_limit)
+        for index, joint in enumerate(self.non_fixed_joints):
+            p.enableJointForceTorqueSensor(self.robot_id, joint, enableSensor=True)
+
+        num_samples = 1000
+
+        # 创建空数组来存储采样点
+        samples = np.empty((num_samples, len(joint_lower_limit)))
+
+        # 遍历每个维度，根据上下界进行均匀采样
+        data =[]
+        for i in range(len(joint_lower_limit)):
+            samples[:, i] = np.random.uniform(joint_lower_limit[i], joint_upper_limit[i], num_samples)
+
+        samples_list = samples.tolist()
+        joint_vels_last = [0.0]*len(self.non_fixed_joints)
+
+        for step in range(len(samples_list)):
+            target_positions = samples_list[step]
+
+            for index, joint in enumerate(self.non_fixed_joints):
+                p.resetJointState(self.robot_id, joint, target_positions[index])
+            # for index, joint in enumerate(self.non_fixed_joints):
+            #     # print("joint = ",joint)
+            #     # p.setJointMotorControl2(self.robot_id, joint, p.TORQUE_CONTROL, 0.0)
+            #     # p.setJointMotorControl2(self.robot_id, joint, p.POSITION_CONTROL, target_positions[index])
+            #     p.setJointMotorControl2(self.robot_id, joint, p.VELOCITY_CONTROL, 0.0)
+            # p.stepSimulation()
+
+            # 进行多次仿真步进，让机器人达到稳定状态
+            # for index, joint in enumerate(self.non_fixed_joints):
+            #     p.resetJointState(self.robot_id, joint, target_positions[index])
+            # p.stepSimulation()
+            # for _ in range(500):  # 可以调整步数
+            #     p.stepSimulation()
+            js_infos = []
+            for id in self.non_fixed_joints:
+                js_info = p.getJointInfo(self.robot_id, id)
+                # print ("joint_info[13] = ", js_info[13])
+                js_infos.append(js_info[13])
+            joint_states = p.getJointStates(self.robot_id, self.non_fixed_joints)
+            
+            joint_positions = [state[0] for state in joint_states]
+            joint_vels = [0.0 for state in joint_states]
+
+            _accelerations = calculate_joint_accelerations(joint_vels, joint_vels_last, 0.01)
+
+            joint_vels_last = joint_vels
+            joint_torques = p.calculateInverseDynamics(self.robot_id, joint_positions, joint_vels, _accelerations)
+            # joint_forces = [-get_axis_torque( js_info,state[2][3:]) for state, js_info in zip(joint_states,js_infos)]
+
+            # print("joint_torques =",joint_torques)
+            # print("joint_forces =",joint_forces)
+
+            # raise ValueError("111")
+            data.append(joint_positions + list(joint_torques))
+
+        return data
+
+        # print(
+        #     "data", data
+        # )
+
+        # print("samples = ",samples_list)
+        
+
+
     def run_sim_to_list(self):
         for index, joint in enumerate(self.non_fixed_joints):
             p.resetJointState(self.robot_id, joint, self.qs_des_[0][index])
         print("non_fixed_joints = ",self.non_fixed_joints)
 
+        for index, joint in enumerate(self.non_fixed_joints):
+            p.enableJointForceTorqueSensor(self.robot_id, joint, enableSensor=True)
+
         # 模拟一系列位置控制
         data =[]
+        joint_vels_last = [0.0]*len(self.non_fixed_joints)
         for step in range(len(self.qs_des_)):
             # 示例：随机设置关节目标位置
             # print("qs_des_")
             target_positions = self.qs_des_[step]
+            # for index, joint in enumerate(self.non_fixed_joints):
+            #     # print("joint = ",joint)
+            #     p.resetJointState(self.robot_id, joint, target_positions[index])
             for index, joint in enumerate(self.non_fixed_joints):
-                # print("joint = ",joint)
                 p.setJointMotorControl2(self.robot_id, joint, p.POSITION_CONTROL, target_positions[index])
 
             # 执行一步仿真
             p.stepSimulation()
 
             # 收集并记录关节的位置和力
+            js_infos = []
+            for id in self.non_fixed_joints:
+                js_info = p.getJointInfo(self.robot_id, id)
+                # print ("joint_info[13] = ", js_info[13])
+                js_infos.append(js_info[13])
+            # raise ValueError("111")
+
             joint_states = p.getJointStates(self.robot_id, self.non_fixed_joints)
             joint_positions = [state[0] for state in joint_states]
-            joint_forces = [-state[3] for state in joint_states]
-            data.append(joint_positions + joint_forces)
+            joint_vels = [state[1] for state in joint_states]
+
+
+            _accelerations = calculate_joint_accelerations(joint_vels, joint_vels_last, 0.01)
+            joint_vels_last = joint_vels
+
+            joint_torques = p.calculateInverseDynamics(self.robot_id, joint_positions, joint_vels, _accelerations)
+            # joint_forces = [-get_axis_torque( js_info,state[2][3:]) for state, js_info in zip(joint_states,js_infos)]
+            data.append(joint_positions + list(joint_torques))
             # print("joint_forces = ",joint_forces)
 
             # 等待一小段时间（根据实际情况调整）
@@ -217,7 +343,7 @@ class TrajectoryConductionSim(Node):
             # 收集并记录关节的位置和力
             joint_states = p.getJointStates(self.robot_id, self.non_fixed_joints)
             joint_positions = [state[0] for state in joint_states]
-            joint_forces = [-state[3] for state in joint_states]
+            joint_forces = [state[2][5] for state in joint_states]
             data.append(joint_positions + joint_forces)
             print("joint_forces = ",joint_forces)
 
