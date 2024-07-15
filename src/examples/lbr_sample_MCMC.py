@@ -151,6 +151,10 @@ def main(args=None):
         csv_saveCreate(prefix+"/data_qry.csv", 
                 d
                 )
+        
+    print("estimate_pam = ",estimate_pam)
+    print("ref_pam = ",ref_pam)
+    print("e_para = ",np.array(ref_pam)-np.array(estimate_pam))
     
     # nn_cp = er_state_compensator("/home/thy/learningDynModel/vae_simple_1_VAE_CNN3.pth")
 

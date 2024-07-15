@@ -286,21 +286,29 @@ class Estimator():
 
         print("_w2, _h2 = {0}, {1}".format(_w2, _h2))
         list_of_intertia_norminal = [Inertia[:, i:i+3] for i in range(0, Inertia.shape[1], 3)]
+
+        print("list_of_intertia_norminal = ",list_of_intertia_norminal)
         # raise ValueError("Run to here")
 
 
         # ineq_constr = [estimate_cs[i] >= lb[i] for i in range(pa_size)] + [estimate_cs[i] <= ub[i] for i in range(pa_size)]
         ineq_constr = []
+        ineq_constr += [cs.norm_2(_estimate[i] - mass_norminal[i])<= 0.2*cs.norm_2(mass_norminal[i]) for i in range(_w0)]
+        ineq_constr += [cs.norm_2(_estimate[_w0+i] - mass_center_norminal[i])<= 0.2*cs.norm_2(mass_center_norminal[i]) for i in range(_w1*_h1)]
+        ineq_constr += [cs.norm_2(_estimate[_w0+_w1*_h1+i] - intertia_norminal[i])<= 0.2*cs.norm_2(intertia_norminal[i]) for i in range(_w2*_h2)]
+        
+        
         ineq_constr += [_estimate[i]> 0.0 for i in range(_w0)]
-        ineq_constr += [_estimate[i] - mass_norminal[i]<= 0.2*cs.norm_2(mass_norminal[i]) for i in range(_w0)]
-        ineq_constr += [_estimate[i] - mass_norminal[i]>= -0.2*cs.norm_2(mass_norminal[i]) for i in range(_w0)]
+        # ineq_constr += [_estimate[i] - mass_norminal[i]>= -0.2*cs.norm_2(mass_norminal[i]) for i in range(_w0)]
 
-        ineq_constr += [cs.norm_2(_estimate[_w0+i] - mass_center_norminal[i])<= 0.5*cs.norm_2(mass_center_norminal[i]) for i in range(_w1*_h1)]
         # ineq_constr += [_estimate[_w0+i] - mass_center_norminal[i]>= -0.5*cs.norm_2(mass_center_norminal[i]) for i in range(_w1*_h1)]
 
-        ineq_constr += [cs.norm_2(_estimate[_w0+_w1*_h1+i] - intertia_norminal[i])<= 0.5*cs.norm_2(intertia_norminal[i]) for i in range(_w2*_h2)]
         # ineq_constr += [_estimate[_w0+_w1*_h1+i] - intertia_norminal[i]>= -0.5*cs.norm_2(intertia_norminal[i]) for i in range(_w2*_h2)]
 
+        for I in list_of_intertia_norminal:
+            # print("cs.eig_symbolic(I) = ",)
+            Ii = cs.eig_symbolic(I)
+            ineq_constr += [Ii[id]>0.0 for id in range(3)]
         # print("list_of_intertia_norminal = {0}".format(list_of_intertia_norminal[0]))
         ineq_constr += [I[0,0] <=I[1,1] +I[2,2] for I in list_of_intertia_norminal]
         ineq_constr += [I[1,1] <=I[0,0] +I[2,2] for I in list_of_intertia_norminal]
@@ -308,24 +316,23 @@ class Estimator():
 
         ineq_constr += [100.0*cs.mmin(cs.vertcat(I[1,1], I[0,0], I[2,2]))  >=cs.mmax(cs.vertcat(I[1,1], I[0,0], I[2,2])) for I in list_of_intertia_norminal]
 
-        ineq_constr += [cs.trace(I)>0.0 for I in list_of_intertia_norminal]
-        ineq_constr += [cs.det(I)>0.0 for I in list_of_intertia_norminal]
-        ineq_constr += [cs.det(I)>0.0 for I in list_of_intertia_norminal]
-        ineq_constr += [I[0,1]>= I[1,0] for I in list_of_intertia_norminal]
-        ineq_constr += [I[0,1]<= I[1,0] for I in list_of_intertia_norminal]
+        # ineq_constr += [cs.trace(I)>0.0 for I in list_of_intertia_norminal]
 
-        ineq_constr += [I[0,2]>= I[2,0] for I in list_of_intertia_norminal]
-        ineq_constr += [I[0,2]<= I[2,0] for I in list_of_intertia_norminal]
+        ineq_constr += [3.0 * list_of_intertia_norminal[j][2,2]<= cs.mmin(cs.vertcat(list_of_intertia_norminal[j][0,0], list_of_intertia_norminal[j][1,1])) for j in [0, 2, 4]]
+        ineq_constr += [3.0 * list_of_intertia_norminal[k][1,1]<= cs.mmin(cs.vertcat(list_of_intertia_norminal[k][0,0], list_of_intertia_norminal[k][2,2])) for k in [1, 3]]
+        
+        # ineq_constr += [I[0,1]>= I[1,0] for I in list_of_intertia_norminal]
+        # ineq_constr += [I[0,1]<= I[1,0] for I in list_of_intertia_norminal]
 
-        ineq_constr += [I[2,1]>= I[1,2] for I in list_of_intertia_norminal]
-        ineq_constr += [I[2,1]<= I[1,2] for I in list_of_intertia_norminal]
+        # ineq_constr += [I[0,2]>= I[2,0] for I in list_of_intertia_norminal]
+        # ineq_constr += [I[0,2]<= I[2,0] for I in list_of_intertia_norminal]
+
+        # ineq_constr += [I[2,1]>= I[1,2] for I in list_of_intertia_norminal]
+        # ineq_constr += [I[2,1]<= I[1,2] for I in list_of_intertia_norminal]
 
 
         ineq_constr += [1e-4<= I[0,0] for I in list_of_intertia_norminal]
         ineq_constr += [1e-4<= I[1,1] for I in list_of_intertia_norminal]
-        ineq_constr += [1e-4<= I[2,2] for I in list_of_intertia_norminal]
-
-
         ineq_constr += [1e-4<= I[2,2] for I in list_of_intertia_norminal]
 
 
@@ -335,25 +342,24 @@ class Estimator():
                                             cs.norm_2(I[1,2])
                                            ))<= 0.1*cs.norm_2(cs.mmin(cs.vertcat(I[1,1], I[0,0], I[2,2]))) for I in list_of_intertia_norminal]
         
-        ineq_constr += [3.0 * list_of_intertia_norminal[j][2,2]<= cs.mmin(cs.vertcat(list_of_intertia_norminal[j][0,0], list_of_intertia_norminal[j][1,1])) for j in [0, 2, 3]]
-        ineq_constr += [3.0 * list_of_intertia_norminal[j][1,1]<= cs.mmin(cs.vertcat(list_of_intertia_norminal[j][0,0], list_of_intertia_norminal[j][2,2])) for j in [1, 3]]
-        
 
-        ineq_constr += [cs.norm_2(_estimate[_w0+i] - mass_center_norminal[i])> 0.1*cs.norm_2(mass_center_norminal[i]) for i in range(_w1*_h1)]
-        ineq_constr += [_estimate[i]> 0.0 for i in range(_w2*_h2)]
+        # ineq_constr += [cs.norm_2(_estimate[_w0+i] - mass_center_norminal[i])> 0.1*cs.norm_2(mass_center_norminal[i]) for i in range(_w1*_h1)]
+        # ineq_constr += [_estimate[i]> 0.0 for i in range(_w2*_h2)]
 
         problem = {'x': _estimate, 'f': obj, 'g': cs.vertcat(*ineq_constr)}
         # solver = cs.qpsol('solver', 'qpoases', problem)
-        solver = cs.nlpsol('S', 'ipopt', problem,{'ipopt':{'max_iter':3000000 }, 'verbose':True})
-        # solver = cs.nlpsol('S', 'ipopt', problem,
-        #               {'ipopt':{'max_iter':1 }, 
-        #                'verbose':False,
-        #                "ipopt.hessian_approximation":"limited-memory"
-        #                })
+        # solver = cs.nlpsol('S', 'ipopt', problem,{'ipopt':{'max_iter':3000000 }, 'verbose':True})
+        solver = cs.nlpsol('S', 'ipopt', problem,
+                      {'ipopt':{'max_iter':1000 }, 
+                       'verbose':False,
+                       "ipopt.hessian_approximation":"limited-memory"
+                       })
         
         print("solver = {0}".format(solver))
         # sol = S(x0 = init_x0,lbg = lbg, ubg = ubg)
-        init_x0 = mass_norminal.tolist()+mass_center_norminal.tolist()+intertia_norminal.tolist()+[0.0]*2*len(qd_np)
+        init_x0 = mass_norminal.tolist()+mass_center_norminal.tolist()+intertia_norminal.tolist()+[0.1]*len(qd_np)+[0.5]*len(qd_np)
+        init_x0 = (mass_norminal*0.95).tolist()+(0.95*mass_center_norminal).tolist()+(0.95*intertia_norminal).tolist()+[0.05]*len(qd_np)+[0.2]*len(qd_np)
+        # sol = solver(x0 = [0.0]*len(init_x0))
         sol = solver(x0 = init_x0)
 
         # print("sol = {0}".format(sol['x']))
