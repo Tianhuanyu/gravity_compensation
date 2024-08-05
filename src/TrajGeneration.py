@@ -64,7 +64,7 @@ def getConstraintsinJointSpace(robot,point_coord = [0.]*3,Nb=7, base_link="link_
     a = 0.15
     b = 0.15
 
-    print("c = ",c)
+    # print("c = ",c)
     EpVF = x*x/(a*a) + y*y/(b*b) + (z-c)*(z-c)/(c*c)-1
 
     # constraints = optas.
@@ -617,6 +617,12 @@ class TrajGeneration(Node):
         # print("Y = {0}".format(Y.shape))
         A_inv = cs.inv(A)
 
+        # eg = cs.eig_symbolic(A)
+
+        # print("QQ =",eg.shape)
+        # # print("RR =",RR)
+        # raise ValueError("run tohere 111")
+
         f1 = cs.simplify(1.0*cs.norm_fro(A) * cs.norm_fro(A_inv))
         f = cs.simplify(1.0*cs.norm_fro(A) + cs.norm_fro(A_inv))
         x = cs.reshape(cs.vertcat(a,b),(1, 2*Rank*7))
@@ -663,7 +669,6 @@ class TrajGeneration(Node):
     
     def find_optimal_point_with_randomstart(self, S,lbg, ubg , Rank=5):
         eps = 0.03
-        
         x_sample_temp = eps* np.random.random (size= (1,70))
 
         return self.find_optimal_point_with_start(S,lbg, ubg , Rank,x_sample_temp)

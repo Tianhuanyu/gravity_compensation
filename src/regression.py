@@ -23,8 +23,60 @@ import math
 import copy
 from IDmodel import TD_2order, TD_list_filter,find_dyn_parm_deps, RNEA_function,DynamicLinearlization,getJointParametersfromURDF
 from scipy import signal
+from sklearn.ensemble import AdaBoostClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.linear_model import LinearRegression
 
 Order = [0,1,2,3,4,5,6]
+
+
+def select_important_samples(A, M_fri,b, preds,n_samples):
+    """
+    通过Adaboost选择重要样本，并返回选择的重要样本。
+    
+    参数:
+    A (cs.DM): 样本矩阵，CasADi DM类型。
+    b (np.ndarray): 样本对应的标签或目标值。
+    n_samples (int): 选择的重要样本数量。
+    
+    返回:
+    A_important (cs.DM): 选择的重要样本矩阵，CasADi DM类型。
+    b_important (np.ndarray): 选择的重要样本对应的标签或目标值。
+    """
+    # 将 CasADi DM 转换为 NumPy 数组
+    A_np = A.full()
+    M_fri_np = M_fri
+    # b_np = b.full()
+    # A_np = np.array(A)
+    # A_np = A
+    b_np = b
+    # model = LinearRegression()
+    # model.fit(A_np, b_np)
+    # raise ValueError("111 run to here")
+    predictions = preds.full().flatten()
+    print("predictions = ", predictions.shape)
+    errors = np.abs(predictions - b_np)
+
+    print("errors = ", errors.shape)
+    print("b_np = ", b_np.shape)
+
+    # 选择误差最大的300个样本
+    important_indices = np.argsort(errors)[-n_samples:]
+    A_important = A_np[important_indices, :]
+    M_fri_imp = M_fri_np[important_indices, :]
+    b_important = b_np[important_indices]
+    print("M_fri_imp = ",M_fri_imp.shape)
+    print("A_np = ",A_np.shape)
+    print("M_fri_np = ",M_fri_np.shape)
+    print("A_important = ",A_important.shape)
+    print("important_indices = ",important_indices.shape)
+    
+    
+    # 将重要样本转换回CasADi DM类型
+    # A_important_cs = cs.DM(A_important)
+    # b_important_cs = cs.DM(b_important)
+    
+    return A_important, M_fri_imp,b_important
 
 
 class Estimator():
@@ -177,6 +229,228 @@ class Estimator():
             csv_writer.writerow({key: value for key, value in zip(keys,values)})
     
 
+    def timer_cb_regressor_physical_con_impt_samp(self, positions, velocities, efforts):
+        
+        Pb, Pd, Kd =find_dyn_parm_deps(7,80,self.Ymat)
+        K = Pb.T +Kd @Pd.T
+
+        # q_nps = []
+        # qd_nps = []
+        # qdd_nps = []
+        taus = []
+        Y_ = []
+        Y_fri = []
+        # init_para = np.random.uniform(0.0, 0.1, size=50)
+        
+        # filter_list = [TD_2order(T=0.01) for i in range(7)]
+        # filter_vector = TD_list_filter(T=0.01)
+        qdd_np = np.array([0.0]*7)
+        for k in range(0,len(positions),1):
+            # print("q_np = {0}".format(q_np))
+            # q_np = np.random.uniform(-1.5, 1.5, size=7)
+            q_np = [positions[k][i] for i in Order]
+            # print("velocities[k] = {0}".format(velocities[k]))
+            qd_np = [velocities[k][i] for i in Order]
+            tau_ext = [efforts[k][i] for i in Order]
+
+            qdlast_np = [velocities[k-1][i] for i in Order]
+            
+            qdd_np = 1.0*(np.array(qd_np)-np.array(qdlast_np))/0.01 + 0.0*qdd_np
+            qdd_np_list = qdd_np.tolist()
+    
+
+            Y_temp = self.Ymat(q_np,
+                               qd_np,
+                               qdd_np_list) @Pb 
+            fri_ = np.diag([float(np.sign(item)) for item in qd_np])
+            fri_ = np.hstack((fri_,  np.diag(qd_np)))
+            # fri_ = [[np.sign(v), v] for v in qd_np]
+            
+            Y_.append(Y_temp)
+   
+            taus.append(tau_ext)
+            Y_fri.append(np.asarray(fri_))
+            
+            # print(qdd_np)
+
+        
+        Y_r = optas.vertcat(*Y_)
+
+        taus1 = np.hstack(taus)
+        Y_fri1 = np.vstack(Y_fri)
+
+        pa_size = Y_r.shape[1]
+ 
+
+
+        taus1 = taus1.T
+
+
+
+   
+        # without friction
+        # Y = Y_r #cs.DM(np.hstack((Y_r, Y_fri1)))
+        
+        # with friction
+        Y = cs.DM(np.hstack((Y_r, Y_fri1)))
+        # estimate_pam = np.linalg.inv(Y.T @ Y) @ Y.T @ taus1
+ 
+        # print("self.masses_np",self.masses_np.shape)
+        # print("self.masses_np",self.massesCenter_np.shape)
+
+        _w1, _h1 =self.massesCenter_np.shape
+        _w2, _h2 =self.Inertia_np.shape
+        _w0 = len(self.masses_np)
+        l1 = _w0 + _w1*_h1
+        l2 = _w0 + _h1*_w1 + _w2 * _h2
+
+        # with friction
+        l = l2+ len(qd_np)*2
+
+        _estimate = cs.SX.sym('para', l)
+
+        estimate_cs = K @ self.PIvector(_estimate[0:_w0],
+                                        _estimate[_w0:l1].reshape((_w1,_h1)),
+                                        _estimate[l1:l2].reshape((_w2,_h2))
+                                        )
+        e_cs_fun = cs.Function('ecs',[_estimate], [estimate_cs])
+        # print("taus1 - Y_r @ estimate_cs -Y_fri1 @ _estimate[-len(qd_np)*2:]", (taus1 - Y_r @ estimate_cs -Y_fri1 @ _estimate[-len(qd_np)*2:]).shape)
+        # raise ValueError("111")
+
+        
+        # obj = cs.sumsqr(taus2 - Y_r1 @ estimate_cs -Y_fri1[:140,:140] @ _estimate[-len(qd_np)*2:])+ \
+        #     0.5 * cs.norm_2(_estimate[:_w0])+ \
+        #     5.0 * cs.norm_2(_estimate[_w0:l1])+\
+        #     5.0 * cs.norm_2(_estimate[l1:l2])
+        
+        obj = cs.sumsqr(taus1 - Y_r @ estimate_cs -Y_fri1 @ _estimate[-len(qd_np)*2:])+ \
+            2.0 * cs.norm_2(_estimate[:_w0])+ \
+            5.0 * cs.norm_2(_estimate[_w0:l1])+\
+            5.0 * cs.norm_2(_estimate[l1:l2])
+
+        mass_norminal = self.masses_np
+        mass_center_norminal = self.massesCenter_np.reshape(-1,_w1*_h1).flatten()
+        intertia_norminal = self.Inertia_np.reshape(-1,_w2*_h2).flatten()
+        
+        Inertia = _estimate[l1:l2].reshape((_w2,_h2))
+
+        print("_w2, _h2 = {0}, {1}".format(_w2, _h2))
+        list_of_intertia_norminal = [Inertia[:, i:i+3] for i in range(0, Inertia.shape[1], 3)]
+
+        print("list_of_intertia_norminal = ",list_of_intertia_norminal)
+        # raise ValueError("Run to here")
+
+
+        # ineq_constr = [estimate_cs[i] >= lb[i] for i in range(pa_size)] + [estimate_cs[i] <= ub[i] for i in range(pa_size)]
+        ineq_constr = []
+        # ineq_constr += [cs.norm_2(_estimate[i] - mass_norminal[i])<= 0.2*cs.norm_2(mass_norminal[i]) for i in range(_w0)]
+        # ineq_constr += [cs.norm_2(_estimate[_w0+i] - mass_center_norminal[i])<= 0.2*cs.norm_2(mass_center_norminal[i]) for i in range(_w1*_h1)]
+        # ineq_constr += [cs.norm_2(_estimate[_w0+_w1*_h1+i] - intertia_norminal[i])<= 0.2*cs.norm_2(intertia_norminal[i]) for i in range(_w2*_h2)]
+        
+        
+        ineq_constr += [_estimate[i]> 0.0 for i in range(_w0)]
+        # ineq_constr += [_estimate[i] - mass_norminal[i]>= -0.2*cs.norm_2(mass_norminal[i]) for i in range(_w0)]
+
+        # ineq_constr += [_estimate[_w0+i] - mass_center_norminal[i]>= -0.5*cs.norm_2(mass_center_norminal[i]) for i in range(_w1*_h1)]
+
+        # ineq_constr += [_estimate[_w0+_w1*_h1+i] - intertia_norminal[i]>= -0.5*cs.norm_2(intertia_norminal[i]) for i in range(_w2*_h2)]
+
+        for I in list_of_intertia_norminal:
+            # print("cs.eig_symbolic(I) = ",)
+            Ii = cs.eig_symbolic(I)
+            ineq_constr += [Ii[id]>0.0 for id in range(3)]
+        # print("list_of_intertia_norminal = {0}".format(list_of_intertia_norminal[0]))
+        ineq_constr += [I[0,0] <=I[1,1] +I[2,2] for I in list_of_intertia_norminal]
+        ineq_constr += [I[1,1] <=I[0,0] +I[2,2] for I in list_of_intertia_norminal]
+        ineq_constr += [I[2,2] <=I[1,1] +I[0,0] for I in list_of_intertia_norminal]
+
+        ineq_constr += [100.0*cs.mmin(cs.vertcat(I[1,1], I[0,0], I[2,2]))  >=cs.mmax(cs.vertcat(I[1,1], I[0,0], I[2,2])) for I in list_of_intertia_norminal]
+
+        # ineq_constr += [cs.trace(I)>0.0 for I in list_of_intertia_norminal]
+
+        ineq_constr += [3.0 * list_of_intertia_norminal[j][2,2]<= cs.mmin(cs.vertcat(list_of_intertia_norminal[j][0,0], list_of_intertia_norminal[j][1,1])) for j in [0, 2, 4]]
+        ineq_constr += [3.0 * list_of_intertia_norminal[k][1,1]<= cs.mmin(cs.vertcat(list_of_intertia_norminal[k][0,0], list_of_intertia_norminal[k][2,2])) for k in [1, 3]]
+        
+
+        ineq_constr += [1e-4<= I[0,0] for I in list_of_intertia_norminal]
+        ineq_constr += [1e-4<= I[1,1] for I in list_of_intertia_norminal]
+        ineq_constr += [1e-4<= I[2,2] for I in list_of_intertia_norminal]
+
+
+        ineq_constr += [cs.mmax(cs.vertcat(
+                                            cs.norm_2(I[1,0]), 
+                                            cs.norm_2(I[0,2]), 
+                                            cs.norm_2(I[1,2])
+                                           ))<= 0.1*cs.norm_2(cs.mmin(cs.vertcat(I[1,1], I[0,0], I[2,2]))) for I in list_of_intertia_norminal]
+        
+
+        # ineq_constr += [cs.norm_2(_estimate[_w0+i] - mass_center_norminal[i])> 0.1*cs.norm_2(mass_center_norminal[i]) for i in range(_w1*_h1)]
+        # ineq_constr += [_estimate[i]> 0.0 for i in range(_w2*_h2)]
+
+        problem = {'x': _estimate, 'f': obj, 'g': cs.vertcat(*ineq_constr)}
+        # solver = cs.qpsol('solver', 'qpoases', problem)
+        # solver = cs.nlpsol('S', 'ipopt', problem,{'ipopt':{'max_iter':3000000 }, 'verbose':True})
+
+        opts = {
+            'ipopt': {
+                'max_iter': 1000,
+                'tol': 1e-8,
+                'acceptable_tol': 1e-6,
+                'acceptable_iter': 10,
+                'linear_solver': 'mumps',  # 或其他高效线性求解器，如 'ma57', 'ma86','mumps'
+                'hessian_approximation': 'limited-memory',
+            },
+            'verbose': False,
+        }
+
+        # 创建求解器
+        solver = cs.nlpsol('S', 'ipopt', problem, opts)
+        # solver = cs.nlpsol('S', 'ipopt', problem,
+        #               {'ipopt':{'max_iter':1000 }, 
+        #                'verbose':False,
+        #                "ipopt.hessian_approximation":"limited-memory"
+        #                })
+        
+        print("solver = {0}".format(solver))
+        # sol = S(x0 = init_x0,lbg = lbg, ubg = ubg)
+        gt_x0 = mass_norminal.tolist()+mass_center_norminal.tolist()+intertia_norminal.tolist()+[0.1]*len(qd_np)+[0.5]*len(qd_np)
+        import random
+        init_x0 = (
+            mass_norminal*np.random.uniform(1.5, 3.5, size=mass_norminal.shape)
+            ).tolist()+(
+                mass_center_norminal*np.random.uniform(0.0, 0.2, size=mass_center_norminal.shape)
+                ).tolist()+(
+                    intertia_norminal*np.random.uniform(0.0, 0.1, size=intertia_norminal.shape)
+                    ).tolist()+[random.random()*0.05 for _ in range(len(qd_np))]+[random.random()*0.2 for _ in range(len(qd_np))]
+        # init_x0 = [random.randint(0, 100) for _ in range(len(gt_x0))]
+        # sol = solver(x0 = [0.0]*len(init_x0))
+        sol = solver(x0 = init_x0)
+
+        # print("sol = {0}".format(sol['x']))
+
+        # print("init_x0 = {0}".format(init_x0))
+        # raise ValueError("run to here")
+
+        preds = taus1 - Y_r @ e_cs_fun(sol['x']) -Y_fri1 @ sol['x'][-len(qd_np)*2:]
+
+        Y_r1, Y_fri2,taus2 = select_important_samples(Y_r, Y_fri1,taus1, preds,140)
+        print("Y_fri2 = ", Y_fri2.shape)
+
+        obj2 = cs.sumsqr(taus2 - Y_r1 @ estimate_cs -Y_fri2 @ _estimate[-len(qd_np)*2:])+ \
+            2.0 * cs.norm_2(_estimate[:_w0])+ \
+            5.0 * cs.norm_2(_estimate[_w0:l1])+\
+            5.0 * cs.norm_2(_estimate[l1:l2])
+        
+        problem2 = {'x': _estimate, 'f': obj2, 'g': cs.vertcat(*ineq_constr)}
+        solver2 = cs.nlpsol('S', 'ipopt', problem2, opts)
+        sol2 = solver2(x0 = sol['x'])
+        
+
+
+        return sol2['x'],np.array(gt_x0)
+    
+
+
     def timer_cb_regressor_physical_con(self, positions, velocities, efforts):
         
         Pb, Pd, Kd =find_dyn_parm_deps(7,80,self.Ymat)
@@ -261,23 +535,21 @@ class Estimator():
                                         _estimate[_w0:l1].reshape((_w1,_h1)),
                                         _estimate[l1:l2].reshape((_w2,_h2))
                                         )
-        obj = cs.sumsqr(taus1 - Y_r @ estimate_cs -Y_fri1 @ _estimate[-len(qd_np)*2:])
+        e_cs_fun = cs.Function('ecs',[_estimate], [estimate_cs])
+        # print("taus1 - Y_r @ estimate_cs -Y_fri1 @ _estimate[-len(qd_np)*2:]", (taus1 - Y_r @ estimate_cs -Y_fri1 @ _estimate[-len(qd_np)*2:]).shape)
+        # raise ValueError("111")
 
-
-        # lb = -3.0*np.array([1.0]*(pa_size))
-        # ub = 3.0*np.array([1.0]*(pa_size))
-
-        # print("self.masses_npv", self.masses_np.shape)
-       
-        # ref_pam = K @ self.PIvector(self.masses_np,self.massesCenter_np,self.Inertia_np).toarray().flatten()
-
-        # print("ref_pam = ",ref_pam.shape)
-        # print("lb = ",lb.shape)
         
-        # lb[:pa_size] = -2.0*ref_pam
-        # ub[:pa_size] = 2.0*ref_pam
+        # obj = cs.sumsqr(taus2 - Y_r1 @ estimate_cs -Y_fri1[:140,:140] @ _estimate[-len(qd_np)*2:])+ \
+        #     0.5 * cs.norm_2(_estimate[:_w0])+ \
+        #     5.0 * cs.norm_2(_estimate[_w0:l1])+\
+        #     5.0 * cs.norm_2(_estimate[l1:l2])
+        
+        obj = cs.sumsqr(taus1 - Y_r @ estimate_cs -Y_fri1 @ _estimate[-len(qd_np)*2:])+ \
+            100.0 * cs.norm_2(_estimate[:_w0])+ \
+            100.0 * cs.norm_2(_estimate[_w0:l1])+\
+            100.0 * cs.norm_2(_estimate[l1:l2])
 
-        # mu_mc = _estimate[_w0:l1]
         mass_norminal = self.masses_np
         mass_center_norminal = self.massesCenter_np.reshape(-1,_w1*_h1).flatten()
         intertia_norminal = self.Inertia_np.reshape(-1,_w2*_h2).flatten()
@@ -293,9 +565,9 @@ class Estimator():
 
         # ineq_constr = [estimate_cs[i] >= lb[i] for i in range(pa_size)] + [estimate_cs[i] <= ub[i] for i in range(pa_size)]
         ineq_constr = []
-        ineq_constr += [cs.norm_2(_estimate[i] - mass_norminal[i])<= 0.2*cs.norm_2(mass_norminal[i]) for i in range(_w0)]
-        ineq_constr += [cs.norm_2(_estimate[_w0+i] - mass_center_norminal[i])<= 0.2*cs.norm_2(mass_center_norminal[i]) for i in range(_w1*_h1)]
-        ineq_constr += [cs.norm_2(_estimate[_w0+_w1*_h1+i] - intertia_norminal[i])<= 0.2*cs.norm_2(intertia_norminal[i]) for i in range(_w2*_h2)]
+        # ineq_constr += [cs.norm_2(_estimate[i] - mass_norminal[i])<= 0.2*cs.norm_2(mass_norminal[i]) for i in range(_w0)]
+        # ineq_constr += [cs.norm_2(_estimate[_w0+i] - mass_center_norminal[i])<= 0.2*cs.norm_2(mass_center_norminal[i]) for i in range(_w1*_h1)]
+        # ineq_constr += [cs.norm_2(_estimate[_w0+_w1*_h1+i] - intertia_norminal[i])<= 0.2*cs.norm_2(intertia_norminal[i]) for i in range(_w2*_h2)]
         
         
         ineq_constr += [_estimate[i]> 0.0 for i in range(_w0)]
@@ -321,15 +593,6 @@ class Estimator():
         ineq_constr += [3.0 * list_of_intertia_norminal[j][2,2]<= cs.mmin(cs.vertcat(list_of_intertia_norminal[j][0,0], list_of_intertia_norminal[j][1,1])) for j in [0, 2, 4]]
         ineq_constr += [3.0 * list_of_intertia_norminal[k][1,1]<= cs.mmin(cs.vertcat(list_of_intertia_norminal[k][0,0], list_of_intertia_norminal[k][2,2])) for k in [1, 3]]
         
-        # ineq_constr += [I[0,1]>= I[1,0] for I in list_of_intertia_norminal]
-        # ineq_constr += [I[0,1]<= I[1,0] for I in list_of_intertia_norminal]
-
-        # ineq_constr += [I[0,2]>= I[2,0] for I in list_of_intertia_norminal]
-        # ineq_constr += [I[0,2]<= I[2,0] for I in list_of_intertia_norminal]
-
-        # ineq_constr += [I[2,1]>= I[1,2] for I in list_of_intertia_norminal]
-        # ineq_constr += [I[2,1]<= I[1,2] for I in list_of_intertia_norminal]
-
 
         ineq_constr += [1e-4<= I[0,0] for I in list_of_intertia_norminal]
         ineq_constr += [1e-4<= I[1,1] for I in list_of_intertia_norminal]
@@ -349,25 +612,43 @@ class Estimator():
         problem = {'x': _estimate, 'f': obj, 'g': cs.vertcat(*ineq_constr)}
         # solver = cs.qpsol('solver', 'qpoases', problem)
         # solver = cs.nlpsol('S', 'ipopt', problem,{'ipopt':{'max_iter':3000000 }, 'verbose':True})
-        solver = cs.nlpsol('S', 'ipopt', problem,
-                      {'ipopt':{'max_iter':1000 }, 
-                       'verbose':False,
-                       "ipopt.hessian_approximation":"limited-memory"
-                       })
+
+        opts = {
+            'ipopt': {
+                'max_iter': 1000,
+                'tol': 1e-8,
+                'acceptable_tol': 1e-6,
+                'acceptable_iter': 10,
+                'linear_solver': 'mumps',  # 或其他高效线性求解器，如 'ma57', 'ma86','mumps'
+                'hessian_approximation': 'limited-memory',
+            },
+            'verbose': False,
+        }
+
+        # 创建求解器
+        solver = cs.nlpsol('S', 'ipopt', problem, opts)
+        # solver = cs.nlpsol('S', 'ipopt', problem,
+        #               {'ipopt':{'max_iter':1000 }, 
+        #                'verbose':False,
+        #                "ipopt.hessian_approximation":"limited-memory"
+        #                })
         
         print("solver = {0}".format(solver))
         # sol = S(x0 = init_x0,lbg = lbg, ubg = ubg)
-        init_x0 = mass_norminal.tolist()+mass_center_norminal.tolist()+intertia_norminal.tolist()+[0.1]*len(qd_np)+[0.5]*len(qd_np)
-        init_x0 = (mass_norminal*0.95).tolist()+(0.95*mass_center_norminal).tolist()+(0.95*intertia_norminal).tolist()+[0.05]*len(qd_np)+[0.2]*len(qd_np)
+        gt_x0 = mass_norminal.tolist()+mass_center_norminal.tolist()+intertia_norminal.tolist()+[0.1]*len(qd_np)+[0.5]*len(qd_np)
+        import random
+        init_x0 = (
+            mass_norminal*np.random.uniform(1.5, 3.5, size=mass_norminal.shape)
+            ).tolist()+(
+                mass_center_norminal*np.random.uniform(0.0, 0.2, size=mass_center_norminal.shape)
+                ).tolist()+(
+                    intertia_norminal*np.random.uniform(0.0, 0.1, size=intertia_norminal.shape)
+                    ).tolist()+[random.random()*0.05 for _ in range(len(qd_np))]+[random.random()*0.2 for _ in range(len(qd_np))]
+        # init_x0 = [random.randint(0, 100) for _ in range(len(gt_x0))]
         # sol = solver(x0 = [0.0]*len(init_x0))
         sol = solver(x0 = init_x0)
 
-        # print("sol = {0}".format(sol['x']))
-
-        # print("init_x0 = {0}".format(init_x0))
-        # raise ValueError("run to here")
-
-        return sol['x'],np.array(init_x0)
+        return sol['x'],np.array(gt_x0)
     
 
     def timer_cb_regressor(self, positions, velocities, efforts):
