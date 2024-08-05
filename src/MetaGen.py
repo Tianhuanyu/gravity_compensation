@@ -89,9 +89,6 @@ def process_data_with_given_params(data, prefix, filename, paraEstimator, estima
     return True
 
 def plot_params(ref_pam_list, estimate_pam_list):
-    # ref_pam_list = ref_pam.flatten().tolist()
-    # estimate_pam_list = estimate_pam.full().flatten().tolist()
-
     plt.figure(figsize=(10, 6))
     plt.scatter(range(len(ref_pam_list)), ref_pam_list, label='List 1', marker='o')
     plt.scatter(range(len(estimate_pam_list)), estimate_pam_list, label='List 2', marker='x')
@@ -100,6 +97,39 @@ def plot_params(ref_pam_list, estimate_pam_list):
     plt.ylabel('Value')
     plt.legend()
     plt.show()
+
+
+
+def view_channels(*measurements_list):
+    plt.figure()
+    DISPLAY = range(7)
+    K = len(DISPLAY)
+    for i, measurements in enumerate(measurements_list):
+        pos = [[] for _ in DISPLAY]
+        for mes in measurements:
+            for i in range(len(DISPLAY)):
+                pos[i].append(mes[DISPLAY[i]])
+                # pos[1].append(mes[DISPLAY[1]])
+                # pos[2].append(mes[DISPLAY[2]])
+    
+        for j in range(K):
+            plt.subplot(K+1, 1, j+1)  # 三行一列，当前激活的是第一个图
+            plt.plot(pos[j])  # '-r' 表示红色实线
+            plt.grid(True)
+        # plt.legend(loc='traj'+str(i))
+
+        # plt.subplot(3, 1, 2)  # 三行一列，当前激活的是第一个图
+        # plt.plot(pos[1])  # '-r' 表示红色实线
+        # # plt.legend(loc='traj'+str(i))
+
+        # plt.subplot(3, 1, 3)  # 三行一列，当前激活的是第一个图
+        # plt.plot(pos[2])  # '-r' 表示红色实线
+        # # plt.legend(loc='traj'+str(i))
+    # 自动调整子图间距
+    plt.tight_layout()
+    # 显示图形
+    plt.show()
+
 
 
 

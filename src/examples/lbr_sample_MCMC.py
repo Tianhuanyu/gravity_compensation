@@ -22,7 +22,7 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 import matplotlib.pyplot as plt
-from MetaGen import generate_excitation_sat_path,process_regression_data,plot_params,process_data_with_given_params
+from MetaGen import generate_excitation_sat_path,process_regression_data,plot_params,process_data_with_given_params,view_channels
 
 
 
@@ -99,15 +99,13 @@ def main(args=None):
     #             d
     #             )
         
-    data = instance.run_sim_in_workspace()
-    _estimate_pam, _ref_pam = process_data_with_given_params(data, prefix, "data_qry.csv", paraEstimator, 
+    data_ = instance.run_sim_in_workspace()
+    c = process_data_with_given_params(data_, prefix, "data_qry.csv", paraEstimator, 
                                                              estimate_pam,ref_pam,'MC_test')
 
     # data = instance.run_sim_in_workspace()
-    # positions, velocities, efforts = paraEstimator.ExtractFromMeasurmentListZeroVel(data)
     # efforts_f = efforts
     # estimate_pam,ref_pam = paraEstimator.timer_cb_regressor_physical_con(positions, velocities, efforts_f)
-    # tau_ests, tau_exts =paraEstimator.testWithEstimatedParaIDyn(positions, velocities, estimate_pam,ref_pam)
     # data = combine_input_output(positions[1:], velocities[1:], tau_exts, tau_ests)
 
     # for d in data:
@@ -124,11 +122,17 @@ def main(args=None):
     estimate_pam_list = estimate_pam.full().flatten().tolist()
     plot_params(ref_pam_list, estimate_pam_list)
 
+    positions, velocities, efforts = paraEstimator.ExtractFromMeasurmentListZeroVel(data)
+    tau_ests, tau_exts =paraEstimator.testWithEstimatedParaIDyn(positions, velocities, estimate_pam,ref_pam)
+    view_channels(tau_ests,tau_exts)
 
-    ref_pam_list = _ref_pam.flatten().tolist()
-    estimate_pam_list = _estimate_pam.full().flatten().tolist()
 
-    plot_params(ref_pam_list, estimate_pam_list)
+
+
+    # ref_pam_list = _ref_pam.flatten().tolist()
+    # estimate_pam_list = _estimate_pam.full().flatten().tolist()
+
+    # plot_params(ref_pam_list, estimate_pam_list)
 
     # plt.figure(figsize=(10, 6))
     # plt.scatter(range(len(ref_pam_list)), ref_pam_list, label='List 1', marker='o')
