@@ -103,28 +103,19 @@ def main(args=None):
     c = process_data_with_given_params(data_, prefix, "data_qry.csv", paraEstimator, 
                                                              estimate_pam,ref_pam,'MC_test')
 
-    # data = instance.run_sim_in_workspace()
-    # efforts_f = efforts
-    # estimate_pam,ref_pam = paraEstimator.timer_cb_regressor_physical_con(positions, velocities, efforts_f)
-    # data = combine_input_output(positions[1:], velocities[1:], tau_exts, tau_ests)
 
-    # for d in data:
-    #     csv_saveCreate(prefix+"/data_qry.csv", 
-    #             d
-    #             )
-        
-    # print("estimate_pam = ",estimate_pam)
-    # print("ref_pam = ",ref_pam)
-    # print("e_para = ",np.array(ref_pam)-np.array(estimate_pam))
     
     """333"""
     ref_pam_list = ref_pam.flatten().tolist()
     estimate_pam_list = estimate_pam.full().flatten().tolist()
     plot_params(ref_pam_list, estimate_pam_list)
 
-    positions, velocities, efforts = paraEstimator.ExtractFromMeasurmentListZeroVel(data)
+    positions, velocities, efforts = paraEstimator.ExtractFromMeasurmentListZeroVel(data_)
     tau_ests, tau_exts =paraEstimator.testWithEstimatedParaIDyn(positions, velocities, estimate_pam,ref_pam)
     view_channels(tau_ests,tau_exts)
+
+    # for tpd, tgd in zip(tau_ests, tau_exts):
+
 
 
 

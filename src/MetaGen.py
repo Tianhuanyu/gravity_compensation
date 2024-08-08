@@ -69,6 +69,27 @@ def process_regression_data(data, prefix, filename, paraEstimator, traj_type='tr
 
     return estimate_pam, ref_pam
 
+def process_identificate_data(data, paraEstimator, traj_type='traj'):
+    if traj_type == 'traj':
+        positions, velocities, efforts = paraEstimator.ExtractFromMeasurmentList(data)
+    elif traj_type == 'MC_test':
+        positions, velocities, efforts = paraEstimator.ExtractFromMeasurmentListZeroVel(data)
+    else:
+        raise ValueError("Not define the type" + traj_type)
+    efforts_f = efforts
+    # 可以根据需要取消注释以滤除噪音
+    # velocities = traj_filter(velocities)
+    # efforts_f = traj_filter(efforts)
+    
+    estimate_pam, ref_pam = paraEstimator.timer_cb_regressor_physical_con(positions, velocities, efforts_f)
+    # tau_ests, tau_exts = paraEstimator.testWithEstimatedParaIDyn(positions, velocities, estimate_pam, ref_pam)
+    # processed_data = combine_input_output(positions[1:], velocities[1:], tau_exts, tau_ests)
+    
+    # for d in processed_data:
+    #     csv_saveCreate(f"{prefix}/{filename}", d)
+
+    return estimate_pam, ref_pam
+
 def process_data_with_given_params(data, prefix, filename, paraEstimator, estimate_pam,ref_pam, traj_type='traj'):
     if traj_type == 'traj':
         positions, velocities, _ = paraEstimator.ExtractFromMeasurmentList(data)

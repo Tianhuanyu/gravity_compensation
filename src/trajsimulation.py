@@ -97,7 +97,8 @@ class TrajectoryConductionSim(Node):
                 resource_list,
                 is_traj_from_path=True,
                 traj_data="/home/thy/target_joint_states.csv",
-                gravity_vector=[0, 0, -9.81]
+                gravity_vector=[0, 0, -9.81],
+                use_gui = True
                 ) -> None:
         
 
@@ -108,11 +109,11 @@ class TrajectoryConductionSim(Node):
         #             get_package_share_directory("lbr_description")
         #         )
         # print("RUn to here")
-        # p.connect(p.DIRECT)
+        if use_gui == False:
+            p.connect(p.DIRECT)
+        else:
         # global p
-        
-
-        p.connect(p.GUI)
+            p.connect(p.GUI)
         p.setTimeStep(0.01)
         p.setGravity(*gravity_vector)
         for path in resource_list:

@@ -5,7 +5,7 @@ import time
 import csv
 import os
 import xacro
-from ament_index_python import get_package_share_directory
+from ament_index_python import get_package_share_directory,get_package_prefix
 import rclpy
 from rclpy import qos
 from rclpy.node import Node
@@ -22,8 +22,26 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 import matplotlib.pyplot as plt
-from MetaGen import generate_excitation_sat_path,process_regression_data,plot_params,process_data_with_given_params,view_channels
+from MetaGen import generate_excitation_sat_path,process_regression_data,plot_params,process_data_with_given_params,view_channels,process_identificate_data
+import random
+module_path = os.path.join(
+            get_package_prefix("gravity_compensation"),
+            "lib",
+            "gravity_compensation"
+        )
+sys.path.append(module_path)
+from trajsimulation import replace_package_paths_in_xacro
 
+module_path1 = os.path.join(
+            get_package_prefix("path_following_pipeline"),
+            "lib",
+            "path_following_pipeline"
+        )
+sys.path.append(module_path1)
+import math
+
+from pb_offline_sim import move_robot_to_start,get_non_fixed_joints,move_robot_along_path
+from robot_path_planning import RobotPathGenerator,generate_circle_path_with_orientation,generate_target_path,add_random_offset
 
 
 def main(args=None):
@@ -67,81 +85,62 @@ def main(args=None):
 
 
     # Init a simulation environment
-    instance = TrajectoryConductionSim(file_name, paths,is_traj_from_path=False,traj_data=None,gravity_vector=gravity_vec)
-
-
-    #regression simplication
-    """111"""
-    values_list = generate_excitation_sat_path(path_arm, gravity_vec)
-    instance.import_traj_fromlist(values_list)
-    instance.set_friction_params()
-
-
-    # Identify the parameters
-    prefix = "/home/thy/test/"
+    instance = TrajectoryConductionSim(file_name, paths,is_traj_from_path=False,traj_data=None,gravity_vector=gravity_vec,use_gui=False)
     paraEstimator = Estimator(gravity_vec=gravity_vec)
-    """222"""
-    data = instance.run_sim_to_list()
-    estimate_pam, ref_pam = process_regression_data(data, prefix, "data_spt.csv", paraEstimator)
+
+    N_exc = 10
+    N_traj = 100
+    prefix = "/home/thy/learningDynModel/meta/"
+    for i in range(N_exc):
+        #regression simplication
+        """111"""
+        values_list = generate_excitation_sat_path(path_arm, gravity_vec)
+        instance.import_traj_fromlist(values_list)
+        instance.set_friction_params()
+
+        _org_excitation = instance.run_sim_to_list()
+        estimate_pam, ref_pam = process_identificate_data(_org_excitation, paraEstimator)
+        # Example usage
+        for j in range(N_traj):
+            # Identify the parameters
+            """222"""
+
+            center = np.array([0, random.uniform(0.3, 0.6), random.uniform(0.3, 0.6)])
+            radius = random.uniform(0.1, 0.3)
+            normal = np.array([random.uniform(0, 2*math.pi), random.uniform(0, 2*math.pi), random.uniform(0, 2*math.pi)])
+            normal = normal/np.linalg.norm(normal)
+
+            circle_path = generate_circle_path_with_orientation(center, radius, normal,num_points=100)
+            if circle_path:
+                pass
+            else:
+                print("circle_path = ",circle_path)
+                raise ValueError("111")
+
+            
+            data_ = generate_target_path(circle_path)
+            amended_tj=add_random_offset(data_)
 
 
-    # positions, velocities, efforts = paraEstimator.ExtractFromMeasurmentList(data)
-    # efforts_f = efforts
-    # ##filter the noise in vel and efforts
-    # # velocities=traj_filter(velocities)
-    # # efforts_f=traj_filter(efforts)
-    # estimate_pam,ref_pam = paraEstimator.timer_cb_regressor_physical_con(positions, velocities, efforts_f)
-    # tau_ests, tau_exts =paraEstimator.testWithEstimatedParaIDyn(positions, velocities, estimate_pam,ref_pam)
-    # data = combine_input_output(positions[1:], velocities[1:], tau_exts, tau_ests)
 
-    # for d in data:
-    #     csv_saveCreate(prefix+"/data_spt.csv", 
-    #             d
-    #             )
-        
-    data_ = instance.run_sim_in_workspace()
-    c = process_data_with_given_params(data_, prefix, "data_qry.csv", paraEstimator, 
-                                                             estimate_pam,ref_pam,'MC_test')
 
-    # data = instance.run_sim_in_workspace()
-    # efforts_f = efforts
-    # estimate_pam,ref_pam = paraEstimator.timer_cb_regressor_physical_con(positions, velocities, efforts_f)
-    # data = combine_input_output(positions[1:], velocities[1:], tau_exts, tau_ests)
+            process_data_with_given_params(data_, prefix+str(j+N_traj*i), "/data_spt.csv", paraEstimator,estimate_pam, ref_pam)
+            process_data_with_given_params(amended_tj, prefix+str(j+N_traj*i), "data_qry.csv", paraEstimator, 
+                                                                    estimate_pam,ref_pam,'MC_test')
 
-    # for d in data:
-    #     csv_saveCreate(prefix+"/data_qry.csv", 
-    #             d
-    #             )
-        
-    # print("estimate_pam = ",estimate_pam)
-    # print("ref_pam = ",ref_pam)
-    # print("e_para = ",np.array(ref_pam)-np.array(estimate_pam))
+    # print("target_js_list = ",target_js_list)
+    # raise ValueError("111"+c)
     
-    """333"""
-    ref_pam_list = ref_pam.flatten().tolist()
-    estimate_pam_list = estimate_pam.full().flatten().tolist()
-    plot_params(ref_pam_list, estimate_pam_list)
-
-    positions, velocities, efforts = paraEstimator.ExtractFromMeasurmentListZeroVel(data)
-    tau_ests, tau_exts =paraEstimator.testWithEstimatedParaIDyn(positions, velocities, estimate_pam,ref_pam)
-    view_channels(tau_ests,tau_exts)
-
-
-
-
-    # ref_pam_list = _ref_pam.flatten().tolist()
-    # estimate_pam_list = _estimate_pam.full().flatten().tolist()
-
+    # """333"""
+    # ref_pam_list = ref_pam.flatten().tolist()
+    # estimate_pam_list = estimate_pam.full().flatten().tolist()
     # plot_params(ref_pam_list, estimate_pam_list)
 
-    # plt.figure(figsize=(10, 6))
-    # plt.scatter(range(len(ref_pam_list)), ref_pam_list, label='List 1', marker='o')
-    # plt.scatter(range(len(estimate_pam_list)), estimate_pam_list, label='List 2', marker='x')
-    # plt.title('Scatter Plot Comparison')
-    # plt.xlabel('Index')
-    # plt.ylabel('Value')
-    # plt.legend()
-    # plt.show()
+    # positions, velocities, efforts = paraEstimator.ExtractFromMeasurmentListZeroVel(data_)
+    # tau_ests, tau_exts =paraEstimator.testWithEstimatedParaIDyn(positions, velocities, estimate_pam,ref_pam)
+    # view_channels(tau_ests,tau_exts)
+
+    
     
     rclpy.shutdown()
 
