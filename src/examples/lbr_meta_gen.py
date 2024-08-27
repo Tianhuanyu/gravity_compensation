@@ -89,7 +89,8 @@ def main(args=None):
     paraEstimator = Estimator(gravity_vec=gravity_vec)
 
     N_exc = 10
-    N_traj = 100
+    N_traj = 50
+    offset = 119
     prefix = "/home/thy/learningDynModel/meta/"
     for i in range(N_exc):
         #regression simplication
@@ -110,7 +111,7 @@ def main(args=None):
             normal = np.array([random.uniform(0, 2*math.pi), random.uniform(0, 2*math.pi), random.uniform(0, 2*math.pi)])
             normal = normal/np.linalg.norm(normal)
 
-            circle_path = generate_circle_path_with_orientation(center, radius, normal,num_points=100)
+            circle_path = generate_circle_path_with_orientation(center, radius, normal,num_points=1000)
             if circle_path:
                 pass
             else:
@@ -122,11 +123,11 @@ def main(args=None):
             amended_tj=add_random_offset(data_)
 
 
+            pfdir = j+N_traj*i + offset
 
-
-            process_data_with_given_params(data_, prefix+str(j+N_traj*i), "/data_spt.csv", paraEstimator,estimate_pam, ref_pam)
-            process_data_with_given_params(amended_tj, prefix+str(j+N_traj*i), "data_qry.csv", paraEstimator, 
-                                                                    estimate_pam,ref_pam,'MC_test')
+            process_data_with_given_params(data_, prefix+str(pfdir), "/data_spt.csv", paraEstimator,estimate_pam, ref_pam)
+            process_data_with_given_params(amended_tj, prefix+str(pfdir), "data_qry.csv", paraEstimator, 
+                                                                    estimate_pam,ref_pam)
 
     # print("target_js_list = ",target_js_list)
     # raise ValueError("111"+c)
