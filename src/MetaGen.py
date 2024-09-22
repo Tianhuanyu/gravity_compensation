@@ -59,9 +59,10 @@ def process_regression_data(data, prefix, filename, paraEstimator, traj_type='tr
     # 可以根据需要取消注释以滤除噪音
     # velocities = traj_filter(velocities)
     # efforts_f = traj_filter(efforts)
+    ref_pam = paraEstimator.get_gt_params_simO()
     
     estimate_pam, ref_pam = paraEstimator.timer_cb_regressor_physical_con(positions, velocities, efforts_f)
-    tau_ests, tau_exts = paraEstimator.testWithEstimatedParaIDyn(positions, velocities, estimate_pam, ref_pam)
+    tau_ests, tau_exts = paraEstimator.testWithEstimatedParaIDyn(positions, velocities, ref_pam, estimate_pam)
     processed_data = combine_input_output(positions[1:], velocities[1:], tau_exts, tau_ests)
     
     for d in processed_data:

@@ -81,8 +81,12 @@ def main(args=None):
     prefix = "/home/thy/test/"
     paraEstimator = Estimator(gravity_vec=gravity_vec)
     """222"""
+    ref_pam = np.array(paraEstimator.get_gt_params_simO())
+
+    instance.setup_params_sim(ref_pam)
     data = instance.run_sim_to_list()
-    estimate_pam, ref_pam = process_regression_data(data, prefix, "data_spt.csv", paraEstimator)
+
+    estimate_pam, _ = process_regression_data(data, prefix, "data_spt.csv", paraEstimator)
 
 
     # positions, velocities, efforts = paraEstimator.ExtractFromMeasurmentList(data)

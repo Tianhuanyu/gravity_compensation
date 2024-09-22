@@ -30,6 +30,54 @@ from sklearn.linear_model import LinearRegression
 Order = [0,1,2,3,4,5,6]
 
 
+import numpy as np
+
+def weighted_least_squares(H, i, max_iterations=100, tolerance=1e-6):
+    """
+    执行加权最小二乘法（WLS）进行参数估计。
+
+    参数:
+    H (numpy.ndarray): 回归矩阵，大小为 (m, n)。
+    i (numpy.ndarray): 电流数据，大小为 (m, 1)。
+    max_iterations (int): 最大迭代次数（默认值为100）。
+    tolerance (float): 收敛的容忍度（默认值为1e-6）。
+
+    返回:
+    numpy.ndarray: 识别出的参数向量，大小为 (n, 1)。
+    """
+    
+    # 初始最小二乘估计（OLS）
+    chi_wls = np.linalg.inv(H.T @ H) @ H.T @ i
+    
+    for iteration in range(max_iterations):
+        # 计算残差
+        residuals = i - H @ chi_wls
+        
+        # 估计残差的协方差矩阵
+        if residuals.ndim == 1:
+            residuals = residuals[:, np.newaxis]
+        sigma = np.cov(residuals, rowvar=False)
+        
+        # 计算加权矩阵的逆平方根
+        sigma_inv_sqrt = np.linalg.inv(np.sqrt(sigma))
+        
+        # 计算加权后的回归矩阵和电流数据
+        H_tilde = sigma_inv_sqrt @ H
+        i_tilde = sigma_inv_sqrt @ i
+        
+        # 更新 WLS 估计
+        chi_wls_new = np.linalg.inv(H_tilde.T @ H_tilde) @ H_tilde.T @ i_tilde
+        
+        # 检查收敛性
+        if np.linalg.norm(chi_wls_new - chi_wls) < tolerance:
+            break
+        
+        chi_wls = chi_wls_new
+    
+    return chi_wls
+
+
+
 def select_important_samples(A, M_fri,b, preds,n_samples):
     """
     通过Adaboost选择重要样本，并返回选择的重要样本。
@@ -343,17 +391,8 @@ class Estimator():
 
         # ineq_constr = [estimate_cs[i] >= lb[i] for i in range(pa_size)] + [estimate_cs[i] <= ub[i] for i in range(pa_size)]
         ineq_constr = []
-        # ineq_constr += [cs.norm_2(_estimate[i] - mass_norminal[i])<= 0.2*cs.norm_2(mass_norminal[i]) for i in range(_w0)]
-        # ineq_constr += [cs.norm_2(_estimate[_w0+i] - mass_center_norminal[i])<= 0.2*cs.norm_2(mass_center_norminal[i]) for i in range(_w1*_h1)]
-        # ineq_constr += [cs.norm_2(_estimate[_w0+_w1*_h1+i] - intertia_norminal[i])<= 0.2*cs.norm_2(intertia_norminal[i]) for i in range(_w2*_h2)]
-        
-        
+
         ineq_constr += [_estimate[i]> 0.0 for i in range(_w0)]
-        # ineq_constr += [_estimate[i] - mass_norminal[i]>= -0.2*cs.norm_2(mass_norminal[i]) for i in range(_w0)]
-
-        # ineq_constr += [_estimate[_w0+i] - mass_center_norminal[i]>= -0.5*cs.norm_2(mass_center_norminal[i]) for i in range(_w1*_h1)]
-
-        # ineq_constr += [_estimate[_w0+_w1*_h1+i] - intertia_norminal[i]>= -0.5*cs.norm_2(intertia_norminal[i]) for i in range(_w2*_h2)]
 
         for I in list_of_intertia_norminal:
             # print("cs.eig_symbolic(I) = ",)
@@ -450,31 +489,17 @@ class Estimator():
         return sol2['x'],np.array(gt_x0)
     
 
-
-    def timer_cb_regressor_physical_con(self, positions, velocities, efforts):
-        
-        Pb, Pd, Kd =find_dyn_parm_deps(7,80,self.Ymat)
-        K = Pb.T +Kd @Pd.T
-
-        # q_nps = []
-        # qd_nps = []
-        # qdd_nps = []
+    def get_Yb_matrix(self, positions, velocities, efforts,Pb):
         taus = []
         Y_ = []
         Y_fri = []
-        # init_para = np.random.uniform(0.0, 0.1, size=50)
-        
-        # filter_list = [TD_2order(T=0.01) for i in range(7)]
-        # filter_vector = TD_list_filter(T=0.01)
+
         qdd_np = np.array([0.0]*7)
         for k in range(0,len(positions),1):
-            # print("q_np = {0}".format(q_np))
-            # q_np = np.random.uniform(-1.5, 1.5, size=7)
+
             q_np = [positions[k][i] for i in Order]
-            # print("velocities[k] = {0}".format(velocities[k]))
             qd_np = [velocities[k][i] for i in Order]
             tau_ext = [efforts[k][i] for i in Order]
-
             qdlast_np = [velocities[k-1][i] for i in Order]
             
             qdd_np = 1.0*(np.array(qd_np)-np.array(qdlast_np))/0.01 + 0.0*qdd_np
@@ -497,85 +522,26 @@ class Estimator():
 
         
         Y_r = optas.vertcat(*Y_)
-
-        taus1 = np.hstack(taus)
+        taus1 = np.hstack(taus).T
         Y_fri1 = np.vstack(Y_fri)
-
-        pa_size = Y_r.shape[1]
- 
-
-
-        taus1 = taus1.T
-
-
-
-   
-        # without friction
-        # Y = Y_r #cs.DM(np.hstack((Y_r, Y_fri1)))
-        
-        # with friction
-        Y = cs.DM(np.hstack((Y_r, Y_fri1)))
-        # estimate_pam = np.linalg.inv(Y.T @ Y) @ Y.T @ taus1
- 
-        # print("self.masses_np",self.masses_np.shape)
-        # print("self.masses_np",self.massesCenter_np.shape)
-
-        _w1, _h1 =self.massesCenter_np.shape
-        _w2, _h2 =self.Inertia_np.shape
-        _w0 = len(self.masses_np)
+        return Y_r, taus1, Y_fri1
+    
+    @staticmethod
+    def build_ineq_physical_con(_estimate,
+                                _w0, # max index of mass
+                                _w1, # size1 of mass center 
+                                _h1, # size2 of mass center
+                                _w2,# size1 of inertia
+                                _h2 # size2 of inertia
+                                ):
         l1 = _w0 + _w1*_h1
-        l2 = _w0 + _h1*_w1 + _w2 * _h2
-
-        # with friction
-        l = l2+ len(qd_np)*2
-
-        _estimate = cs.SX.sym('para', l)
-
-        estimate_cs = K @ self.PIvector(_estimate[0:_w0],
-                                        _estimate[_w0:l1].reshape((_w1,_h1)),
-                                        _estimate[l1:l2].reshape((_w2,_h2))
-                                        )
-        e_cs_fun = cs.Function('ecs',[_estimate], [estimate_cs])
-        # print("taus1 - Y_r @ estimate_cs -Y_fri1 @ _estimate[-len(qd_np)*2:]", (taus1 - Y_r @ estimate_cs -Y_fri1 @ _estimate[-len(qd_np)*2:]).shape)
-        # raise ValueError("111")
-
-        
-        # obj = cs.sumsqr(taus2 - Y_r1 @ estimate_cs -Y_fri1[:140,:140] @ _estimate[-len(qd_np)*2:])+ \
-        #     0.5 * cs.norm_2(_estimate[:_w0])+ \
-        #     5.0 * cs.norm_2(_estimate[_w0:l1])+\
-        #     5.0 * cs.norm_2(_estimate[l1:l2])
-        
-        obj = cs.sumsqr(taus1 - Y_r @ estimate_cs -Y_fri1 @ _estimate[-len(qd_np)*2:])+ \
-            100.0 * cs.norm_2(_estimate[:_w0])+ \
-            100.0 * cs.norm_2(_estimate[_w0:l1])+\
-            100.0 * cs.norm_2(_estimate[l1:l2])
-
-        mass_norminal = self.masses_np
-        mass_center_norminal = self.massesCenter_np.reshape(-1,_w1*_h1).flatten()
-        intertia_norminal = self.Inertia_np.reshape(-1,_w2*_h2).flatten()
-        
+        l2 = l1 + _w2 * _h2
         Inertia = _estimate[l1:l2].reshape((_w2,_h2))
-
-        print("_w2, _h2 = {0}, {1}".format(_w2, _h2))
         list_of_intertia_norminal = [Inertia[:, i:i+3] for i in range(0, Inertia.shape[1], 3)]
 
-        print("list_of_intertia_norminal = ",list_of_intertia_norminal)
-        # raise ValueError("Run to here")
-
-
-        # ineq_constr = [estimate_cs[i] >= lb[i] for i in range(pa_size)] + [estimate_cs[i] <= ub[i] for i in range(pa_size)]
         ineq_constr = []
-        # ineq_constr += [cs.norm_2(_estimate[i] - mass_norminal[i])<= 0.2*cs.norm_2(mass_norminal[i]) for i in range(_w0)]
-        # ineq_constr += [cs.norm_2(_estimate[_w0+i] - mass_center_norminal[i])<= 0.2*cs.norm_2(mass_center_norminal[i]) for i in range(_w1*_h1)]
-        # ineq_constr += [cs.norm_2(_estimate[_w0+_w1*_h1+i] - intertia_norminal[i])<= 0.2*cs.norm_2(intertia_norminal[i]) for i in range(_w2*_h2)]
-        
-        
+ 
         ineq_constr += [_estimate[i]> 0.0 for i in range(_w0)]
-        # ineq_constr += [_estimate[i] - mass_norminal[i]>= -0.2*cs.norm_2(mass_norminal[i]) for i in range(_w0)]
-
-        # ineq_constr += [_estimate[_w0+i] - mass_center_norminal[i]>= -0.5*cs.norm_2(mass_center_norminal[i]) for i in range(_w1*_h1)]
-
-        # ineq_constr += [_estimate[_w0+_w1*_h1+i] - intertia_norminal[i]>= -0.5*cs.norm_2(intertia_norminal[i]) for i in range(_w2*_h2)]
 
         for I in list_of_intertia_norminal:
             # print("cs.eig_symbolic(I) = ",)
@@ -605,10 +571,79 @@ class Estimator():
                                             cs.norm_2(I[1,2])
                                            ))<= 0.1*cs.norm_2(cs.mmin(cs.vertcat(I[1,1], I[0,0], I[2,2]))) for I in list_of_intertia_norminal]
         
+        return ineq_constr
+    @staticmethod
+    def get_gt_params_sim(mass_norminal,
+                          mass_center_norminal,
+                          intertia_norminal,
+                          nj,
+                          fri_p1=0.1,
+                          fri_p2=0.5
+                          ):
+        # mass_norminal = self.masses_np
+        # mass_center_norminal = self.massesCenter_np.reshape(-1,_w1*_h1).flatten()
+        # intertia_norminal = self.Inertia_np.reshape(-1,_w2*_h2).flatten()
+        gt_x0 = mass_norminal.tolist()+mass_center_norminal.tolist()+intertia_norminal.tolist()+[fri_p1]*nj+[fri_p2]*nj
 
-        # ineq_constr += [cs.norm_2(_estimate[_w0+i] - mass_center_norminal[i])> 0.1*cs.norm_2(mass_center_norminal[i]) for i in range(_w1*_h1)]
-        # ineq_constr += [_estimate[i]> 0.0 for i in range(_w2*_h2)]
+        return gt_x0
+    
 
+    def get_gt_params_simO(self):
+        nj = self.robot.ndof
+        mass_norminal = self.masses_np
+        _w1, _h1 =self.massesCenter_np.shape
+        _w2, _h2 =self.Inertia_np.shape
+        mass_center_norminal = self.massesCenter_np.reshape(-1,_w1*_h1).flatten()
+        intertia_norminal = self.Inertia_np.reshape(-1,_w2*_h2).flatten()
+        
+
+        gt_x0 = Estimator.get_gt_params_sim(mass_norminal,
+                                            mass_center_norminal,
+                                            intertia_norminal,
+                                            nj)
+        return gt_x0
+    
+
+
+    def timer_cb_regressor_physical_con(self, positions, velocities, efforts):
+        
+        nj = len(positions[0])
+        Pb, Pd, Kd =find_dyn_parm_deps(7,80,self.Ymat)
+        K = Pb.T +Kd @Pd.T
+
+        Y_r, taus1, Y_fri1 = self.get_Yb_matrix(positions, velocities, efforts, Pb)
+
+        
+
+        _w1, _h1 =self.massesCenter_np.shape
+        _w2, _h2 =self.Inertia_np.shape
+        _w0 = len(self.masses_np)
+        l1 = _w0 + _w1*_h1
+        l2 = l1 + _w2 * _h2
+
+        # with friction
+        l = l2+ nj*2
+
+        _estimate = cs.SX.sym('para', l)
+
+        estimate_cs = K @ self.PIvector(_estimate[0:_w0],
+                                        _estimate[_w0:l1].reshape((_w1,_h1)),
+                                        _estimate[l1:l2].reshape((_w2,_h2))
+                                        )
+        
+
+        obj = cs.sumsqr(taus1 - Y_r @ estimate_cs -Y_fri1 @ _estimate[-nj*2:])
+        # + \
+        #     100.0 * cs.norm_2(_estimate[:_w0])+ \
+        #     100.0 * cs.norm_2(_estimate[_w0:l1])+\
+        #     100.0 * cs.norm_2(_estimate[l1:l2])
+
+        # Inertia = _estimate[l1:l2].reshape((_w2,_h2))
+        # list_of_intertia_norminal = [Inertia[:, i:i+3] for i in range(0, Inertia.shape[1], 3)]
+
+
+        ineq_constr = Estimator.build_ineq_physical_con(_estimate,_w0,_w1,_h1,_w2,_h2)
+        
         problem = {'x': _estimate, 'f': obj, 'g': cs.vertcat(*ineq_constr)}
         # solver = cs.qpsol('solver', 'qpoases', problem)
         # solver = cs.nlpsol('S', 'ipopt', problem,{'ipopt':{'max_iter':3000000 }, 'verbose':True})
@@ -633,18 +668,32 @@ class Estimator():
         #                "ipopt.hessian_approximation":"limited-memory"
         #                })
         
+
+
+
         print("solver = {0}".format(solver))
-        # sol = S(x0 = init_x0,lbg = lbg, ubg = ubg)
-        gt_x0 = mass_norminal.tolist()+mass_center_norminal.tolist()+intertia_norminal.tolist()+[0.1]*len(qd_np)+[0.5]*len(qd_np)
+
+        mass_norminal = self.masses_np
+        mass_center_norminal = self.massesCenter_np.reshape(-1,_w1*_h1).flatten()
+        intertia_norminal = self.Inertia_np.reshape(-1,_w2*_h2).flatten()
+        
+
+        gt_x0 = Estimator.get_gt_params_sim(mass_norminal,
+                                            mass_center_norminal,
+                                            intertia_norminal,
+                                            nj)
+        # gt_x0 = mass_norminal.tolist()+mass_center_norminal.tolist()+intertia_norminal.tolist()+[0.1]*nj+[0.5]*nj
+
+
+        # init_x0 = [random.randint(0, 10) for _ in range(len(gt_x0))]
         import random
         init_x0 = (
-            mass_norminal*np.random.uniform(1.5, 3.5, size=mass_norminal.shape)
+            mass_norminal*np.random.uniform(0.0, 2.0, size=mass_norminal.shape)
             ).tolist()+(
-                mass_center_norminal*np.random.uniform(0.0, 0.2, size=mass_center_norminal.shape)
+                mass_center_norminal*np.random.uniform(0.0, 2.0, size=mass_center_norminal.shape)
                 ).tolist()+(
-                    intertia_norminal*np.random.uniform(0.0, 0.1, size=intertia_norminal.shape)
-                    ).tolist()+[random.random()*0.05 for _ in range(len(qd_np))]+[random.random()*0.2 for _ in range(len(qd_np))]
-        # init_x0 = [random.randint(0, 100) for _ in range(len(gt_x0))]
+                    intertia_norminal*np.random.uniform(0.0, 2.0, size=intertia_norminal.shape)
+                    ).tolist()+[random.random()*0.05 for _ in range(nj)]+[random.random()*0.2 for _ in range(nj)]
         # sol = solver(x0 = [0.0]*len(init_x0))
         sol = solver(x0 = init_x0)
 

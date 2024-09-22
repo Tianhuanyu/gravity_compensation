@@ -20,6 +20,12 @@ import xml.etree.ElementTree as ET
 import rospkg
 import xml.etree.ElementTree as ET
 
+import optas
+from scipy.spatial.transform import Rotation as Rot
+from optas.spatialmath import *
+from IDmodel import TD_2order, TD_list_filter,find_dyn_parm_deps, RNEA_function,DynamicLinearlization,getJointParametersfromURDF
+import urdf_parser_py.urdf as urdf
+
 def get_axis_torque(axis, torques):
     # 轴的方向
     ax, ay, az = axis
@@ -151,6 +157,55 @@ class TrajectoryConductionSim(Node):
             else:
                 self.import_traj_fromlist(traj_data)
 
+        self.robot = optas.RobotModel(
+            xacro_filename=file_name,
+            time_derivs=[1],  # i.e. joint velocity
+        )
+        Nb, xyzs, rpys, axes = getJointParametersfromURDF(self.robot)
+        self.dynamics_ = RNEA_function(Nb,1,rpys,xyzs,axes,gravity_para = cs.DM(gravity_vector))
+        self.Ymat, self.PIvector = DynamicLinearlization(self.dynamics_,Nb)
+
+
+        urdf_string_ = xacro.process(file_name)
+        robot = urdf.URDF.from_xml_string(urdf_string_)
+
+        masses = [link.inertial.mass for link in robot.links if link.inertial is not None]#+[1.0]
+        self.masses_np = np.array(masses[1:])
+        massesCenter = [link.inertial.origin.xyz for link in robot.links if link.inertial is not None]#+[[0.0,0.0,0.0]]
+        self.massesCenter_np = np.array(massesCenter[1:]).T
+        Inertia = [link.inertial.inertia.to_matrix() for link in robot.links if link.inertial is not None]
+        self.Inertia_np = np.hstack(tuple(Inertia[1:]))
+        self.params = None
+        self.Pb = None
+
+    def setup_params_sim(self,params):
+        self.params = np.asarray(params)
+
+        _w1, _h1 =self.massesCenter_np.shape
+        _w2, _h2 =self.Inertia_np.shape
+        _w0 = len(self.masses_np)
+        l = _w0 + _h1*_w1 + _w2 * _h2
+        l1 = _w0 + _w1*_h1
+
+        Pb, Pd, Kd =find_dyn_parm_deps(7,80,self.Ymat)
+        K = Pb.T +Kd @Pd.T
+        self.estimate_gt = K @ self.PIvector(self.params[0:_w0],
+                                        self.params[_w0:l1].reshape((_w1,_h1)),
+                                        self.params[l1:l].reshape((_w2,_h2)))
+        
+        self.Pb = Pb
+
+
+    def inverse_dynamics(self, q_np, qd_np, qdd_np):
+        if self.params is None:
+            raise ValueError("Forgot Params Setting")
+        tau_ext = (self.Ymat(q_np,qd_np,qdd_np) @self.Pb@  self.estimate_gt + 
+                np.diag(np.sign(qd_np)) @ self.params[-2*len(qd_np):-len(qd_np)]+ 
+                np.diag(qd_np) @ self.params[-len(qd_np):])
+        return tau_ext.full().flatten()
+
+
+
     def __del__(self):
         p.disconnect()
 
@@ -247,7 +302,11 @@ class TrajectoryConductionSim(Node):
             _accelerations = calculate_joint_accelerations(joint_vels, joint_vels_last, 0.01)
 
             joint_vels_last = joint_vels
-            joint_torques = p.calculateInverseDynamics(self.robot_id, joint_positions, joint_vels, _accelerations)
+
+            if self.params is None:
+                joint_torques = p.calculateInverseDynamics(self.robot_id, joint_positions, joint_vels, _accelerations)
+            else:
+                joint_torques = self.inverse_dynamics(joint_positions, joint_vels,_accelerations)
             # joint_forces = [-get_axis_torque( js_info,state[2][3:]) for state, js_info in zip(joint_states,js_infos)]
 
             # print("joint_torques =",joint_torques)
@@ -277,15 +336,16 @@ class TrajectoryConductionSim(Node):
         # 模拟一系列位置控制
         data =[]
         joint_vels_last = [0.0]*len(self.non_fixed_joints)
+
+        
         for step in range(len(self.qs_des_)):
             # 示例：随机设置关节目标位置
             # print("qs_des_")
             target_positions = self.qs_des_[step]
-            # for index, joint in enumerate(self.non_fixed_joints):
-            #     # print("joint = ",joint)
-            #     p.resetJointState(self.robot_id, joint, target_positions[index])
             for index, joint in enumerate(self.non_fixed_joints):
-                p.setJointMotorControl2(self.robot_id, joint, p.POSITION_CONTROL, target_positions[index])
+                p.resetJointState(self.robot_id, joint, target_positions[index])
+            # for index, joint in enumerate(self.non_fixed_joints):
+            #     p.setJointMotorControl2(self.robot_id, joint, p.POSITION_CONTROL, target_positions[index])
 
             # 执行一步仿真
             p.stepSimulation()
@@ -306,7 +366,13 @@ class TrajectoryConductionSim(Node):
             _accelerations = calculate_joint_accelerations(joint_vels, joint_vels_last, 0.01)
             joint_vels_last = joint_vels
 
-            joint_torques = p.calculateInverseDynamics(self.robot_id, joint_positions, joint_vels, _accelerations)
+
+            #TODO
+            if self.params is None:
+                joint_torques = p.calculateInverseDynamics(self.robot_id, joint_positions, joint_vels, _accelerations)
+            else:
+                joint_torques = self.inverse_dynamics(joint_positions, joint_vels,_accelerations)
+                
             # joint_forces = [-get_axis_torque( js_info,state[2][3:]) for state, js_info in zip(joint_states,js_infos)]
             data.append(joint_positions + list(joint_torques))
             # print("joint_forces = ",joint_forces)
