@@ -212,7 +212,7 @@ def main(args=None):
 
 
 
-        for k in range(3, N_dyna):
+        for k in range(0, N_dyna):
             """2. different """
             instance = TrajectoryConductionSim(file_name, 
                                             paths,is_traj_from_path=False,
