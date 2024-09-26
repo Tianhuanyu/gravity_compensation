@@ -72,7 +72,11 @@ def main(args=None):
 
     #regression simplication
     """111"""
-    values_list = generate_excitation_sat_path(path_arm, gravity_vec)
+    """ Note: Ff decides the cycle time of the Traj.
+            Make Ff smaller, T will be longer
+        """
+    values_list,conditional_num = generate_excitation_sat_path(path_arm, gravity_vec)
+
     instance.import_traj_fromlist(values_list)
     instance.set_friction_params()
 
@@ -88,20 +92,6 @@ def main(args=None):
 
     estimate_pam, _ = process_regression_data(data, prefix, "data_spt.csv", paraEstimator)
 
-
-    # positions, velocities, efforts = paraEstimator.ExtractFromMeasurmentList(data)
-    # efforts_f = efforts
-    # ##filter the noise in vel and efforts
-    # # velocities=traj_filter(velocities)
-    # # efforts_f=traj_filter(efforts)
-    # estimate_pam,ref_pam = paraEstimator.timer_cb_regressor_physical_con(positions, velocities, efforts_f)
-    # tau_ests, tau_exts =paraEstimator.testWithEstimatedParaIDyn(positions, velocities, estimate_pam,ref_pam)
-    # data = combine_input_output(positions[1:], velocities[1:], tau_exts, tau_ests)
-
-    # for d in data:
-    #     csv_saveCreate(prefix+"/data_spt.csv", 
-    #             d
-    #             )
         
     data_ = instance.run_sim_in_workspace()
     c = process_data_with_given_params(data_, prefix, "data_qry.csv", paraEstimator, 
@@ -117,6 +107,8 @@ def main(args=None):
     positions, velocities, efforts = paraEstimator.ExtractFromMeasurmentListZeroVel(data_)
     tau_ests, tau_exts =paraEstimator.testWithEstimatedParaIDyn(positions, velocities, estimate_pam,ref_pam)
     view_channels(tau_ests,tau_exts)
+
+    print("params = ",estimate_pam_list)
 
     # for tpd, tgd in zip(tau_ests, tau_exts):
 

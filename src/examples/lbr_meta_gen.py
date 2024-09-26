@@ -95,7 +95,7 @@ def main(args=None):
     for i in range(N_exc):
         #regression simplication
         """111"""
-        values_list = generate_excitation_sat_path(path_arm, gravity_vec)
+        values_list,_ = generate_excitation_sat_path(path_arm, gravity_vec)
         instance.import_traj_fromlist(values_list)
         instance.set_friction_params()
 

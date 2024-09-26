@@ -35,7 +35,7 @@ def generate_excitation_sat_path(robot_urdf:str,
                                  cond_th:float=400.0,
                                  theta1:float=0.0,
                                  theta2:float=0.0):
-    conditional_num = 100000.0
+    conditional_num = 1e12
     traj_instance = TrajGenerationUsrPath(path=robot_urdf, gravity_vector=gravity_vec)
     S,lbg,ubg,fc = traj_instance.get_optimization_problem(Ff = Ff,sampling_rate = inopt_rate, bias = [theta1, theta2, 0.0, 0.0, 0.0, 0.0, 0.0])
     while(conditional_num>cond_th):
@@ -47,7 +47,7 @@ def generate_excitation_sat_path(robot_urdf:str,
 
         print("conditional_num = ",conditional_num)
 
-    return values_list
+    return values_list,conditional_num
 def process_regression_data(data, prefix, filename, paraEstimator, traj_type='traj'):
     if traj_type == 'traj':
         positions, velocities, efforts = paraEstimator.ExtractFromMeasurmentList(data)

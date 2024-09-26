@@ -184,6 +184,7 @@ class TrajectoryConductionSim(Node):
         _w1, _h1 =self.massesCenter_np.shape
         _w2, _h2 =self.Inertia_np.shape
         _w0 = len(self.masses_np)
+
         l = _w0 + _h1*_w1 + _w2 * _h2
         l1 = _w0 + _w1*_h1
 
@@ -194,6 +195,11 @@ class TrajectoryConductionSim(Node):
                                         self.params[l1:l].reshape((_w2,_h2)))
         
         self.Pb = Pb
+
+        # print("self.estimate_gt = ",self.estimate_gt.shape)
+        # print("self.params 2 = ",self.params[-7:])
+
+        # raise ValueError("1111")
 
 
     def inverse_dynamics(self, q_np, qd_np, qdd_np):
@@ -206,8 +212,8 @@ class TrajectoryConductionSim(Node):
 
 
 
-    def __del__(self):
-        p.disconnect()
+    # def __del__(self):
+    #     p.disconnect()
 
 
     

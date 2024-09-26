@@ -541,7 +541,7 @@ class Estimator():
 
         ineq_constr = []
  
-        ineq_constr += [_estimate[i]> 0.0 for i in range(_w0)]
+        ineq_constr += [_estimate[i]- 0.1>0 for i in range(_w0)]
 
         for I in list_of_intertia_norminal:
             # print("cs.eig_symbolic(I) = ",)
@@ -613,7 +613,7 @@ class Estimator():
 
         Y_r, taus1, Y_fri1 = self.get_Yb_matrix(positions, velocities, efforts, Pb)
 
-        
+        print("self.masses_np = ",self.masses_np)
 
         _w1, _h1 =self.massesCenter_np.shape
         _w2, _h2 =self.Inertia_np.shape
@@ -632,11 +632,10 @@ class Estimator():
                                         )
         
 
-        obj = cs.sumsqr(taus1 - Y_r @ estimate_cs -Y_fri1 @ _estimate[-nj*2:])
-        # + \
-        #     100.0 * cs.norm_2(_estimate[:_w0])+ \
-        #     100.0 * cs.norm_2(_estimate[_w0:l1])+\
-        #     100.0 * cs.norm_2(_estimate[l1:l2])
+        obj = cs.sumsqr(taus1 - Y_r @ estimate_cs -Y_fri1 @ _estimate[-nj*2:])+ \
+            10.0 * cs.norm_2(_estimate[:_w0])+ \
+            100.0 * cs.norm_2(_estimate[_w0:l1])+\
+            100.0 * cs.norm_2(_estimate[l1:l2])
 
         # Inertia = _estimate[l1:l2].reshape((_w2,_h2))
         # list_of_intertia_norminal = [Inertia[:, i:i+3] for i in range(0, Inertia.shape[1], 3)]
@@ -648,16 +647,23 @@ class Estimator():
         # solver = cs.qpsol('solver', 'qpoases', problem)
         # solver = cs.nlpsol('S', 'ipopt', problem,{'ipopt':{'max_iter':3000000 }, 'verbose':True})
 
+
         opts = {
             'ipopt': {
-                'max_iter': 1000,
-                'tol': 1e-8,
-                'acceptable_tol': 1e-6,
-                'acceptable_iter': 10,
-                'linear_solver': 'mumps',  # 或其他高效线性求解器，如 'ma57', 'ma86','mumps'
-                'hessian_approximation': 'limited-memory',
+                'max_iter': 5000,  # 提高最大迭代次数
+                'tol': 1e-10,  # 更严格的容忍度
+                'constr_viol_tol': 1e-9,  # 约束违反容差
+                'compl_inf_tol': 1e-9,  # 互补性条件容差
+                'acceptable_tol': 1e-8,  # 更严格的可接受容忍度
+                'acceptable_iter': 20,  # 提高可接受的最大迭代次数
+                'linear_solver': 'mumps',  # 或 'ma57', 'mumps'，选择最适合的求解器
+                'mu_strategy': 'adaptive',  # 自适应 mu 策略
+                'dual_inf_tol': 1e-10,  # 更严格的对偶可行性容忍度
+                'compl_inf_tol': 1e-10,  # 更严格的互补性容忍度
+                'bound_relax_factor': 0,  # 防止约束松弛
+                'hessian_approximation': 'exact',  # 使用精确的 Hessian，不使用近似
             },
-            'verbose': False,
+            'verbose': False,  # 如果需要调试信息，可以设置为 True
         }
 
         # 创建求解器
@@ -693,7 +699,7 @@ class Estimator():
                 mass_center_norminal*np.random.uniform(0.0, 2.0, size=mass_center_norminal.shape)
                 ).tolist()+(
                     intertia_norminal*np.random.uniform(0.0, 2.0, size=intertia_norminal.shape)
-                    ).tolist()+[random.random()*0.05 for _ in range(nj)]+[random.random()*0.2 for _ in range(nj)]
+                    ).tolist()+[random.random()*1.0 for _ in range(nj)]+[random.random()*1.0 for _ in range(nj)]
         # sol = solver(x0 = [0.0]*len(init_x0))
         sol = solver(x0 = init_x0)
 
@@ -850,8 +856,16 @@ class Estimator():
             e= tau_est_model - tau_ext 
             print("sim_tau = {0}".format(tau_ext))
             print("tau_est_model = {0}".format(tau_est_model))
+            print("sim_tau 2 = {0}".format(self.dynamics_(q_np,qd_np,
+                                                          qdd_np,
+                                                          self.masses_np,
+                                                          para_gt[_w0:l1].reshape((_w1,_h1)),
+                                                          para_gt[l1:l].reshape((_w2,_h2))
+                                                          ))
+                                                          )
+            # raise ValueError("111")
             # print("tau_error = {0}".format(e))
-            print("q_np = {0}".format(q_np))
+            # print("q_np = {0}".format(q_np))
 
             tau_ests.append(tau_est_model.toarray().flatten().tolist())
             es.append(e.toarray().flatten().tolist())
