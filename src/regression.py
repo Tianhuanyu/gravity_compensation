@@ -934,13 +934,6 @@ def main(args=None):
     compare_traj(tau_exts, efforts_f)
 
 
-    # path_pos_2 = config.REGRESSION_SECONDARY_MEASUREMENT_PATH
-
-    # positions_, velocities_, efforts_ = paraEstimator.ExtractFromMeasurmentCsv(path_pos_2)
-    # velocities_=traj_filter(velocities_)
-    # efforts_f_=traj_filter(efforts_)
-    # tau_exts_, es =paraEstimator.testWithEstimatedParaCon(positions_, velocities_, efforts_f_,estimate_pam)
-    # compare_traj(tau_exts_, efforts_f_)
 
     rclpy.shutdown()
 

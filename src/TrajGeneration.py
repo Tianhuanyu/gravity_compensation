@@ -54,7 +54,7 @@ def load_from_csv(filename):
 
 
 
-def getConstraintsinJointSpace(robot,point_coord = [0.]*3,Nb=7, base_link="link_3", base_joint_name="A3", ee_link="link_ee"):
+def getConstraintsinJointSpace(robot,point_coord = [0.]*3,Nb=7, base_link="link_3", base_joint_name="A3", ee_link=config.EE_LINK_NAME):
     q = cs.SX.sym('q', Nb, 1)
 
     pe = robot.get_global_link_position(ee_link, q)
@@ -152,7 +152,7 @@ class TrajGeneration(Node):
             time_derivs=[1],  # i.e. joint velocity
         )
 
-        Nb, xyzs, rpys, axes = getJointParametersfromURDF(self.robot)
+        Nb, xyzs, rpys, axes = getJointParametersfromURDF(self.robot,config.EE_LINK_NAME)
         self.dynamics_ = RNEA_function(Nb,1,rpys,xyzs,axes,gravity_para=cs.DM(gv))
         self.Ymat, self.PIvector = DynamicLinearlization(self.dynamics_,Nb)
 
@@ -170,6 +170,8 @@ class TrajGeneration(Node):
         
         Inertia = [link.inertial.inertia.to_matrix() for link in robot.links if link.inertial is not None]
         self.Inertia_np = np.hstack(tuple(Inertia[1:]))
+        self._traj_hyperparams = config.trajgen_hyperparameters(path)
+        self._traj_objective = dict(config.TRAJGEN_OBJECTIVE)
 
 
     
@@ -184,33 +186,33 @@ class TrajGeneration(Node):
         return l    
 
     
-    def ExtractFromMeasurmentCsv(self):
-        path_pos = config.TRAJGEN_MEASUREMENT_WITH_EXT_TAU_PATH
+    # def ExtractFromMeasurmentCsv(self):
+    #     path_pos = config.TRAJGEN_MEASUREMENT_WITH_EXT_TAU_PATH
 
-        dt = 0.01
-        pos_l = []
-        tau_ext_l = []
-        with open(path_pos) as csv_file:
-            csv_reader = csv.DictReader(csv_file)
-            for row in csv_reader:
-                # print("111 = {0}".format(row.values()))
-                pl = list(row.values())[0:7]
-                tl = list(row.values())[7:14]
-                joint_names = [x.strip() for x in list(row.keys())]
-                pos_l.append([float(x) for x in pl])
-                tau_ext_l.append([float(x) for x in tl])
+    #     dt = 0.01
+    #     pos_l = []
+    #     tau_ext_l = []
+    #     with open(path_pos) as csv_file:
+    #         csv_reader = csv.DictReader(csv_file)
+    #         for row in csv_reader:
+    #             # print("111 = {0}".format(row.values()))
+    #             pl = list(row.values())[0:7]
+    #             tl = list(row.values())[7:14]
+    #             joint_names = [x.strip() for x in list(row.keys())]
+    #             pos_l.append([float(x) for x in pl])
+    #             tau_ext_l.append([float(x) for x in tl])
 
-        vel_l =[]
-        filter = TD_2order(T=0.01)
-        for id in range(len(pos_l)):
-            if id == 0:
-                vel_l.append([0.0, 0.0,0.0, 0.0,0.0, 0.0,0.0])
-            else:
-                vel_l.append([(p-p_1)/dt for (p,p_1) in zip(pos_l[id],pos_l[id-1])])
+    #     vel_l =[]
+    #     filter = TD_2order(T=0.01)
+    #     for id in range(len(pos_l)):
+    #         if id == 0:
+    #             vel_l.append([0.0, 0.0,0.0, 0.0,0.0, 0.0,0.0])
+    #         else:
+    #             vel_l.append([(p-p_1)/dt for (p,p_1) in zip(pos_l[id],pos_l[id-1])])
 
 
 
-        return pos_l,vel_l,tau_ext_l
+    #     return pos_l,vel_l,tau_ext_l
 
     def _build_fourier_samples(self, Ff, sampling_rate, Rank, bias):
         """Create symbolic Fourier parameters and sampled trajectories."""
@@ -237,19 +239,46 @@ class TrajGeneration(Node):
 
     def _self_collision_functions(self, mesh_path=config.TRAJGEN_MESH_PATH):
         """Generate and cache self-collision constraint functions."""
+        if not config.TRAJGEN_ENABLE_SELF_COLLISION:
+            self._collision_constraints = []
+            return self._collision_constraints
         if not hasattr(self, "_collision_constraints"):
             points = get_convex_hull(mesh_path)
             print("points", points)
-            self._collision_constraints = [
-                getConstraintsinJointSpace(
-                    self.robot,
-                    point_coord=point,
-                    base_link=f"link_{idx}",
-                    base_joint_name=f"A{idx}",
-                )
-                for point in points
-                for idx in range(2, 6)
-            ]
+
+            def _resolve_name(raw_name, names):
+                if raw_name in names:
+                    return raw_name
+                digits = "".join(filter(str.isdigit, raw_name))
+                if digits:
+                    matches = [
+                        candidate
+                        for candidate in names
+                        if candidate.endswith(digits)
+                    ]
+                    if matches:
+                        return matches[0]
+                return None
+
+            urdf_model = self.robot.urdf
+            available_links = list(urdf_model.link_map.keys())
+            available_joints = list(urdf_model.joint_map.keys())
+
+            constraints = []
+            for point in points:
+                for idx in range(2, 6):
+                    base_link_name = _resolve_name(f"link_{idx}", available_links)
+                    base_joint_name = _resolve_name(f"A{idx}", available_joints)
+                    if base_link_name and base_joint_name:
+                        constraints.append(
+                            getConstraintsinJointSpace(
+                                self.robot,
+                                point_coord=point,
+                                base_link=base_link_name,
+                                base_joint_name=base_joint_name,
+                            )
+                        )
+            self._collision_constraints = constraints
         return self._collision_constraints
 
     @staticmethod
@@ -260,16 +289,57 @@ class TrajGeneration(Node):
             for q in q_list
             for constraint in constraint_functions
         ]
+
+    def _regularised_condition_metric(self, A):
+        """Return regularised matrix and objective value based on config metric."""
+        objective_cfg = getattr(self, "_traj_objective", config.TRAJGEN_OBJECTIVE)
+        epsilon = float(objective_cfg.get("epsilon", 1e-6))
+        metric_type = objective_cfg.get("type", "log_cond_fro")
+        n = A.size1()
+        A_reg = A + epsilon * cs.DM.eye(n)
+        if metric_type == "log_cond_fro":
+            metric = cs.log(cs.norm_fro(A_reg) * cs.norm_fro(cs.inv(A_reg)))
+        else:
+            # Fallback to previous Frobenius sum for unsupported types.
+            metric = cs.norm_fro(A_reg) + cs.norm_fro(cs.inv(A_reg))
+        return A_reg, cs.simplify(metric)
     
-    def generate_opt_traj_Link(self,Ff, sampling_rate, Rank=5, 
-                          q_min=-2.0*np.ones(7), q_max =2.0*np.ones(7),
-                          q_vmin=-8.0*np.ones(7),q_vmax=8.0*np.ones(7),
-                          f_path = None, g_path=None,bias=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]):
+    def generate_opt_traj_Link(
+        self,
+        Ff,
+        sampling_rate,
+        Rank=None,
+        q_min=None,
+        q_max=None,
+        q_vmin=None,
+        q_vmax=None,
+        f_path=None,
+        g_path=None,
+        bias=None,
+    ):
         warnings.warn(
             "The 'deprecated_method' is deprecated and will be removed in a future version.",
             DeprecationWarning,
             stacklevel=2
         )
+
+        hyper = getattr(
+            self,
+            "_traj_hyperparams",
+            config.trajgen_hyperparameters(config.TRAJGEN_MODEL_PATH),
+        )
+
+        def _resolve_array(key, override):
+            return np.array(override if override is not None else hyper[key], dtype=float)
+
+        rank_default = int(hyper.get("fourier_rank", 5))
+        Rank = int(Rank) if Rank is not None else rank_default
+
+        bias = list(_resolve_array("bias", bias))
+        q_min = _resolve_array("q_min", q_min)
+        q_max = _resolve_array("q_max", q_max)
+        q_vmin = _resolve_array("q_vmin", q_vmin)
+        q_vmax = _resolve_array("q_vmax", q_vmax)
 
         Pb, _, _ =find_dyn_parm_deps(7,80,self.Ymat)
 
@@ -306,6 +376,8 @@ class TrajGeneration(Node):
             q_max,
             q_vmin,
             q_vmax,
+            Rank,
+            bias,
         )
 
         if pfun_list:
@@ -317,17 +389,11 @@ class TrajGeneration(Node):
 
 
         A = Y.T @ Y
-        A_inv = cs.inv(A)
+        A_reg, objective_expr = self._regularised_condition_metric(A)
 
-        f1 = cs.simplify(cs.norm_fro(A) * cs.norm_fro(A_inv))
-        f = cs.simplify(cs.norm_fro(A) + cs.norm_fro(A_inv))
         x = cs.reshape(cs.vertcat(a,b),(1, 2*Rank*7))
-        # fout = objective(a,b)
-        
 
-        fc = optas.Function('fc',[a,b],[A])
-        f_fun = optas.Function('ff',[a,b],[f])
-        # _f_fun = optas.Function('f_ffc',[a,b],[_f])
+        fc = optas.Function('fc',[a,b],[A_reg])
         g_fun = optas.Function('gf',[a,b],[g])
 
         G_max = 1# 
@@ -337,19 +403,13 @@ class TrajGeneration(Node):
         # init_x0_best = -eps*np.ones((1,2*Rank*7)) +  2* eps* np.random.random (size= (1,2*Rank*7))
         reject_sample = 100
 
-        problem = {'x': x,'f':f1, 'g': g}
+        problem = {'x': x,'f':objective_expr, 'g': g}
         S = cs.nlpsol('S', 'ipopt', problem,
                       {'ipopt':{'max_iter':50000 }, 
                        'verbose':False,
                        "ipopt.hessian_approximation":"limited-memory"
                        })
-        
-        problem1 = {'x': x,'f':f1, 'g': g}
-        S1 = cs.nlpsol('S', 'ipopt', problem1,
-                      {'ipopt':{'max_iter':50000 }, 
-                       'verbose':False,
-                       "ipopt.hessian_approximation":"limited-memory"
-                       })
+
         _x0_best = None
 
         x_sample_temp = eps* np.random.random (size= (1,2*Rank*7))
@@ -412,7 +472,18 @@ class TrajGeneration(Node):
                             q_max,
                             q_vmin,
                             q_vmax,
+                            Rank,
+                            bias,
                             ):
+        q_min = np.asarray(q_min, dtype=float)
+        q_max = np.asarray(q_max, dtype=float)
+        q_vmin = np.asarray(q_vmin, dtype=float)
+        q_vmax = np.asarray(q_vmax, dtype=float)
+        bias = np.asarray(bias, dtype=float)
+        # work with deviations around the chosen bias so asymmetric URDF limits
+        # (e.g. Panda joint 4) remain feasible.
+        q_amp = np.maximum(np.abs(q_min - bias), np.abs(q_max - bias))
+
         a_eq1 = [0.0]*7
         a_eq2 = [0.0]*7
         b_eq1 = [0.0]*7
@@ -435,7 +506,7 @@ class TrajGeneration(Node):
         ubg5 = []
         ubg6 = []
         for i in range(7):
-            for l in range(5):
+            for l in range(Rank):
                 a_eq1[i] = a_eq1[i] + a[l,i]/(l+1)
                 b_eq1[i] = b_eq1[i] + b[l,i]
                 a_eq2[i] = a_eq2[i] + a[l,i]*(l+1)
@@ -451,8 +522,9 @@ class TrajGeneration(Node):
                 ab_sq_ineq3.append(b[l,i])
 
 
-                cpr2 = min((l+1)*Ff/5.0*2.0*math.pi*q_max[i],q_vmax[i])
-                cpr = max((l+1)*Ff/5.0*2.0*math.pi*q_min[i],q_vmin[i])
+                vel_amp = (l+1) * Ff / Rank * 2.0 * math.pi * q_amp[i]
+                cpr2 = min(vel_amp,q_vmax[i])
+                cpr = max(-vel_amp,q_vmin[i])
                 lbg6.append(cpr)
                 lbg6.append(cpr)
 
@@ -468,7 +540,7 @@ class TrajGeneration(Node):
             ubg1.append(0.0)
             ubg2.append(0.0)
             ubg3.append(0.0)
-            ubg4.append(Ff* math.pi* 2.0  *q_max[i])
+            ubg4.append(Ff* math.pi* 2.0  *q_amp[i])
             ubg5.append(q_vmax[i])
 
 
@@ -531,14 +603,14 @@ class TrajGeneration(Node):
         Y = self.get_Y_matrix(q_list, qd_list, qdd_list)
         
         A = Y.T @ Y
-        A_inv = cs.inv(A)
-
-
+        A_reg, objective_expr = self._regularised_condition_metric(A)
 
         g_base, lbg_base, ubg_base = self.get_ineq_Fourier_expression(
                         Ff, a,b,
                         q_min,q_max,
-                        q_vmin,q_vmax
+                        q_vmin,q_vmax,
+                        Rank,
+                        bias,
                     )
         if pfun_list:
             g = cs.vertcat(g_base, *pfun_list)
@@ -547,11 +619,9 @@ class TrajGeneration(Node):
         else:
             g, lbg, ubg = g_base, lbg_base, ubg_base
 
-        # f1 = cs.simplify(1.0*cs.norm_fro(A) * cs.norm_fro(A_inv))
-        f = cs.simplify(1.0*cs.norm_fro(A) + cs.norm_fro(A_inv))
         x = cs.reshape(cs.vertcat(a,b),(1, 2*Rank*7))
  
-        fc = optas.Function('fc',[a,b],[A])
+        fc = optas.Function('fc',[a,b],[A_reg])
         
 
         opts = {
@@ -570,7 +640,7 @@ class TrajGeneration(Node):
             'verbose': False,  
         }
 
-        problem = {'x': x,'f':f, 'g': g}
+        problem = {'x': x,'f':objective_expr, 'g': g}
         S = cs.nlpsol('S', 'ipopt', problem, opts)
         
  
@@ -727,8 +797,8 @@ class TrajGeneration(Node):
                 ab_sq_ineq3.append(b[l,i])
 
 
-                cpr2 = min((l+1)*Ff/5.0*2.0*math.pi*q_max[i],q_vmax[i])
-                cpr = max((l+1)*Ff/5.0*2.0*math.pi*q_min[i],q_vmin[i])
+                cpr2 = min((l+1) * Ff / Rank * 2.0 * math.pi * q_max[i],q_vmax[i])
+                cpr = max((l+1) * Ff / Rank * 2.0 * math.pi * q_min[i],q_vmin[i])
                 lbg6.append(cpr)
                 lbg6.append(cpr)
 
@@ -831,10 +901,16 @@ class TrajGeneration(Node):
         
         assert a.shape == b.shape
 
-        fourierInstance1 = FourierSeries(ff = Ff)
+        hyper = getattr(
+            self,
+            "_traj_hyperparams",
+            config.trajgen_hyperparameters(config.TRAJGEN_MODEL_PATH),
+        )
+        Rank = a.shape[0]
+        fourierInstance1 = FourierSeries(Rank=Rank, ff=Ff, bias=list(hyper.get("bias", [0.0] * 7)))
 
-        cs_a = cs.SX.sym('ca', 5,7)
-        cs_b = cs.SX.sym('cb', 5,7)
+        cs_a = cs.SX.sym('ca', Rank,7)
+        cs_b = cs.SX.sym('cb', Rank,7)
         t = cs.SX.sym('tt', 1)
 
         fourierF = fourierInstance1.FourierFunction(t, cs_a, cs_b,'f2')
@@ -1064,12 +1140,11 @@ def mainO(args=None):
     sampling_rate = 100.0
     sampling_rate_inoptimization = 20.0
 
-    theta1 = 0.0
-    theta2 = -0.5233
-
-    # a,b,fc = paraEstimator.generate_opt_traj_Link(Ff = Ff,sampling_rate = sampling_rate_inoptimization, bias = [0, 0, 0.0, 1.9, 0.0, 1.0, 0.0],q_min=[-6.2, -2.0, -6.2, -0.19, -6.2, -1.69, -6.2],q_max=[6.2, 2.0, 6.2, 3.94, 6.2, 3.14, 6.2])
-    a,b,fc = paraEstimator.generate_opt_traj_Link(Ff = Ff,sampling_rate = sampling_rate_inoptimization, bias = [0, 0, 0.0, 0.0, 0.0, 1.0, 0.0],q_min=[-6.2, -12.0, -16.2, -10.19, -16.2, -11.69, -16.2],q_max=[6.2, 12.0, 16.2, 13.94, 16.2, 13.14, 16.2])
-    # a,b,fc = paraEstimator.generate_opt_traj_Link(Ff = Ff,sampling_rate = sampling_rate_inoptimization)
+    # The optimisation bounds are now provided via config.trajgen_hyperparameters.
+    a,b,fc = paraEstimator.generate_opt_traj_Link(
+        Ff=Ff,
+        sampling_rate=sampling_rate_inoptimization,
+    )
     print("a = {0} \n b = {1}".format(a,b))
 
     ret = paraEstimator.generateToCsv(a,b,Ff = Ff,sampling_rate=sampling_rate)
