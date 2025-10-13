@@ -31,10 +31,10 @@ install(
     src/ground_truth_gen_sim.py
     src/regression.py
     src/IDmodel.py
-    src/CollisionCheck.py
-    src/admittance_test.py
+    # src/CollisionCheck.py
+    # src/admittance_test.py
     src/convexhallExtraction.py
-    src/test_model.py
+    # src/test_model.py
     src/MetaGen.py
     src/examples/lbr_traj_gen.py
   DESTINATION lib/${PROJECT_NAME}

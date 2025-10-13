@@ -331,7 +331,14 @@ def getJointParametersfromURDF(robot, ee_link="link_ee"):
     rpys starts from joint 0 to joint ee
     axes starts from joint 0 to joint ee
     """
-    joints_list_r = joints_list[1:]
+    # some robot descriptions (e.g. KUKA) prepend a fixed "world" joint while the
+    # Franka Panda description starts directly with the first actuated joint.
+    # Drop the leading joint only if it is actually fixed so that we always keep
+    # all actuated joints in the chain.
+    if joints_list and robot_urdf.joint_map[joints_list[0]].type == "fixed":
+        joints_list_r = joints_list[1:]
+    else:
+        joints_list_r = joints_list[:]
     for joint_name in joints_list_r:
         joint = robot_urdf.joint_map[joint_name]
         xyz, rpy = robot.get_joint_origin(joint)
@@ -471,6 +478,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 

@@ -12,66 +12,34 @@ import os
 import rclpy
 import xacro
 from ament_index_python import get_package_share_directory
-from rclpy import qos
-from rclpy.node import Node
 import csv
-
-import pathlib
-
 import urdf_parser_py.urdf as urdf
-import math
-import copy
-from IDmodel import TD_2order, TD_list_filter,find_dyn_parm_deps, RNEA_function,DynamicLinearlization,getJointParametersfromURDF
+from IDmodel import TD_2order,find_dyn_parm_deps, RNEA_function,DynamicLinearlization,getJointParametersfromURDF
 from scipy import signal
-from sklearn.ensemble import AdaBoostClassifier
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.linear_model import LinearRegression
+import random
 
-Order = [0,1,2,3,4,5,6]
+import config
 
-
-import numpy as np
 
 def weighted_least_squares(H, i, max_iterations=100, tolerance=1e-6):
-    """
-    执行加权最小二乘法（WLS）进行参数估计。
 
-    参数:
-    H (numpy.ndarray): 回归矩阵，大小为 (m, n)。
-    i (numpy.ndarray): 电流数据，大小为 (m, 1)。
-    max_iterations (int): 最大迭代次数（默认值为100）。
-    tolerance (float): 收敛的容忍度（默认值为1e-6）。
-
-    返回:
-    numpy.ndarray: 识别出的参数向量，大小为 (n, 1)。
-    """
-    
-    # 初始最小二乘估计（OLS）
     chi_wls = np.linalg.inv(H.T @ H) @ H.T @ i
     
     for iteration in range(max_iterations):
-        # 计算残差
+
         residuals = i - H @ chi_wls
         
-        # 估计残差的协方差矩阵
+
         if residuals.ndim == 1:
             residuals = residuals[:, np.newaxis]
         sigma = np.cov(residuals, rowvar=False)
         
-        # 计算加权矩阵的逆平方根
         sigma_inv_sqrt = np.linalg.inv(np.sqrt(sigma))
-        
-        # 计算加权后的回归矩阵和电流数据
         H_tilde = sigma_inv_sqrt @ H
         i_tilde = sigma_inv_sqrt @ i
-        
-        # 更新 WLS 估计
         chi_wls_new = np.linalg.inv(H_tilde.T @ H_tilde) @ H_tilde.T @ i_tilde
-        
-        # 检查收敛性
         if np.linalg.norm(chi_wls_new - chi_wls) < tolerance:
             break
-        
         chi_wls = chi_wls_new
     
     return chi_wls
@@ -79,66 +47,26 @@ def weighted_least_squares(H, i, max_iterations=100, tolerance=1e-6):
 
 
 def select_important_samples(A, M_fri,b, preds,n_samples):
-    """
-    通过Adaboost选择重要样本，并返回选择的重要样本。
-    
-    参数:
-    A (cs.DM): 样本矩阵，CasADi DM类型。
-    b (np.ndarray): 样本对应的标签或目标值。
-    n_samples (int): 选择的重要样本数量。
-    
-    返回:
-    A_important (cs.DM): 选择的重要样本矩阵，CasADi DM类型。
-    b_important (np.ndarray): 选择的重要样本对应的标签或目标值。
-    """
-    # 将 CasADi DM 转换为 NumPy 数组
     A_np = A.full()
     M_fri_np = M_fri
-    # b_np = b.full()
-    # A_np = np.array(A)
-    # A_np = A
     b_np = b
-    # model = LinearRegression()
-    # model.fit(A_np, b_np)
-    # raise ValueError("111 run to here")
+
     predictions = preds.full().flatten()
-    print("predictions = ", predictions.shape)
     errors = np.abs(predictions - b_np)
-
-    print("errors = ", errors.shape)
-    print("b_np = ", b_np.shape)
-
-    # 选择误差最大的300个样本
     important_indices = np.argsort(errors)[-n_samples:]
     A_important = A_np[important_indices, :]
     M_fri_imp = M_fri_np[important_indices, :]
     b_important = b_np[important_indices]
-    print("M_fri_imp = ",M_fri_imp.shape)
-    print("A_np = ",A_np.shape)
-    print("M_fri_np = ",M_fri_np.shape)
-    print("A_important = ",A_important.shape)
-    print("important_indices = ",important_indices.shape)
-    
-    
-    # 将重要样本转换回CasADi DM类型
-    # A_important_cs = cs.DM(A_important)
-    # b_important_cs = cs.DM(b_important)
-    
     return A_important, M_fri_imp,b_important
+    
 
 
 class Estimator():
     def __init__(self, node_name = "para_estimatior", dt_ = 5.0, N_ = 100, gravity_vec = [0.0, 0.0, -9.81]) -> None:
 
         self.dt_ = dt_
-        # self.declare_parameter("model", "med7dock")
-        self.model_ = "med7dock" #str(self.get_parameter("model").value)
-        path = os.path.join(
-            get_package_share_directory("med7_dock_description"),
-            "urdf",
-            # self.model_,
-            f"{self.model_}.urdf.xacro",
-        )
+        self.model_path = config.REGRESSION_MODEL_PATH
+        path = self.model_path
         self.N = N_
 
         # 1. Get the kinematic parameters of every joints
@@ -147,6 +75,8 @@ class Estimator():
             time_derivs=[1],  # i.e. joint velocity
         )
 
+        self.ndof = self.robot.ndof
+        self.order = list(range(self.ndof))
 
         Nb, xyzs, rpys, axes = getJointParametersfromURDF(self.robot)
         self.dynamics_ = RNEA_function(Nb,1,rpys,xyzs,axes,gravity_para = cs.DM(gravity_vec))
@@ -278,8 +208,8 @@ class Estimator():
     
 
     def timer_cb_regressor_physical_con_impt_samp(self, positions, velocities, efforts):
-        
-        Pb, Pd, Kd =find_dyn_parm_deps(7,80,self.Ymat)
+
+        Pb, Pd, Kd =find_dyn_parm_deps(self.ndof,80,self.Ymat)
         K = Pb.T +Kd @Pd.T
 
         # q_nps = []
@@ -290,18 +220,18 @@ class Estimator():
         Y_fri = []
         # init_para = np.random.uniform(0.0, 0.1, size=50)
         
-        # filter_list = [TD_2order(T=0.01) for i in range(7)]
+        # filter_list = [TD_2order(T=0.01) for _ in range(self.ndof)]
         # filter_vector = TD_list_filter(T=0.01)
-        qdd_np = np.array([0.0]*7)
+        qdd_np = np.zeros(self.ndof)
         for k in range(0,len(positions),1):
             # print("q_np = {0}".format(q_np))
             # q_np = np.random.uniform(-1.5, 1.5, size=7)
-            q_np = [positions[k][i] for i in Order]
+            q_np = [positions[k][i] for i in self.order]
             # print("velocities[k] = {0}".format(velocities[k]))
-            qd_np = [velocities[k][i] for i in Order]
-            tau_ext = [efforts[k][i] for i in Order]
+            qd_np = [velocities[k][i] for i in self.order]
+            tau_ext = [efforts[k][i] for i in self.order]
 
-            qdlast_np = [velocities[k-1][i] for i in Order]
+            qdlast_np = [velocities[k-1][i] for i in self.order]
             
             qdd_np = 1.0*(np.array(qd_np)-np.array(qdlast_np))/0.01 + 0.0*qdd_np
             qdd_np_list = qdd_np.tolist()
@@ -333,18 +263,10 @@ class Estimator():
 
         taus1 = taus1.T
 
-
-
-   
-        # without friction
-        # Y = Y_r #cs.DM(np.hstack((Y_r, Y_fri1)))
         
         # with friction
         Y = cs.DM(np.hstack((Y_r, Y_fri1)))
         # estimate_pam = np.linalg.inv(Y.T @ Y) @ Y.T @ taus1
- 
-        # print("self.masses_np",self.masses_np.shape)
-        # print("self.masses_np",self.massesCenter_np.shape)
 
         _w1, _h1 =self.massesCenter_np.shape
         _w2, _h2 =self.Inertia_np.shape
@@ -362,15 +284,7 @@ class Estimator():
                                         _estimate[l1:l2].reshape((_w2,_h2))
                                         )
         e_cs_fun = cs.Function('ecs',[_estimate], [estimate_cs])
-        # print("taus1 - Y_r @ estimate_cs -Y_fri1 @ _estimate[-len(qd_np)*2:]", (taus1 - Y_r @ estimate_cs -Y_fri1 @ _estimate[-len(qd_np)*2:]).shape)
-        # raise ValueError("111")
 
-        
-        # obj = cs.sumsqr(taus2 - Y_r1 @ estimate_cs -Y_fri1[:140,:140] @ _estimate[-len(qd_np)*2:])+ \
-        #     0.5 * cs.norm_2(_estimate[:_w0])+ \
-        #     5.0 * cs.norm_2(_estimate[_w0:l1])+\
-        #     5.0 * cs.norm_2(_estimate[l1:l2])
-        
         obj = cs.sumsqr(taus1 - Y_r @ estimate_cs -Y_fri1 @ _estimate[-len(qd_np)*2:])+ \
             2.0 * cs.norm_2(_estimate[:_w0])+ \
             5.0 * cs.norm_2(_estimate[_w0:l1])+\
@@ -436,24 +350,18 @@ class Estimator():
                 'tol': 1e-8,
                 'acceptable_tol': 1e-6,
                 'acceptable_iter': 10,
-                'linear_solver': 'mumps',  # 或其他高效线性求解器，如 'ma57', 'ma86','mumps'
+                'linear_solver': 'mumps',  
                 'hessian_approximation': 'limited-memory',
             },
             'verbose': False,
         }
 
-        # 创建求解器
         solver = cs.nlpsol('S', 'ipopt', problem, opts)
-        # solver = cs.nlpsol('S', 'ipopt', problem,
-        #               {'ipopt':{'max_iter':1000 }, 
-        #                'verbose':False,
-        #                "ipopt.hessian_approximation":"limited-memory"
-        #                })
+
         
         print("solver = {0}".format(solver))
-        # sol = S(x0 = init_x0,lbg = lbg, ubg = ubg)
         gt_x0 = mass_norminal.tolist()+mass_center_norminal.tolist()+intertia_norminal.tolist()+[0.1]*len(qd_np)+[0.5]*len(qd_np)
-        import random
+
         init_x0 = (
             mass_norminal*np.random.uniform(1.5, 3.5, size=mass_norminal.shape)
             ).tolist()+(
@@ -461,14 +369,8 @@ class Estimator():
                 ).tolist()+(
                     intertia_norminal*np.random.uniform(0.0, 0.1, size=intertia_norminal.shape)
                     ).tolist()+[random.random()*0.05 for _ in range(len(qd_np))]+[random.random()*0.2 for _ in range(len(qd_np))]
-        # init_x0 = [random.randint(0, 100) for _ in range(len(gt_x0))]
-        # sol = solver(x0 = [0.0]*len(init_x0))
+
         sol = solver(x0 = init_x0)
-
-        # print("sol = {0}".format(sol['x']))
-
-        # print("init_x0 = {0}".format(init_x0))
-        # raise ValueError("run to here")
 
         preds = taus1 - Y_r @ e_cs_fun(sol['x']) -Y_fri1 @ sol['x'][-len(qd_np)*2:]
 
@@ -483,8 +385,6 @@ class Estimator():
         problem2 = {'x': _estimate, 'f': obj2, 'g': cs.vertcat(*ineq_constr)}
         solver2 = cs.nlpsol('S', 'ipopt', problem2, opts)
         sol2 = solver2(x0 = sol['x'])
-        
-
 
         return sol2['x'],np.array(gt_x0)
     
@@ -494,13 +394,13 @@ class Estimator():
         Y_ = []
         Y_fri = []
 
-        qdd_np = np.array([0.0]*7)
+        qdd_np = np.zeros(self.ndof)
         for k in range(0,len(positions),1):
 
-            q_np = [positions[k][i] for i in Order]
-            qd_np = [velocities[k][i] for i in Order]
-            tau_ext = [efforts[k][i] for i in Order]
-            qdlast_np = [velocities[k-1][i] for i in Order]
+            q_np = [positions[k][i] for i in self.order]
+            qd_np = [velocities[k][i] for i in self.order]
+            tau_ext = [efforts[k][i] for i in self.order]
+            qdlast_np = [velocities[k-1][i] for i in self.order]
             
             qdd_np = 1.0*(np.array(qd_np)-np.array(qdlast_np))/0.01 + 0.0*qdd_np
             qdd_np_list = qdd_np.tolist()
@@ -511,7 +411,7 @@ class Estimator():
                                qdd_np_list) @Pb 
             fri_ = np.diag([float(np.sign(item)) for item in qd_np])
             fri_ = np.hstack((fri_,  np.diag(qd_np)))
-            # fri_ = [[np.sign(v), v] for v in qd_np]
+
             
             Y_.append(Y_temp)
    
@@ -608,7 +508,7 @@ class Estimator():
     def timer_cb_regressor_physical_con(self, positions, velocities, efforts):
         
         nj = len(positions[0])
-        Pb, Pd, Kd =find_dyn_parm_deps(7,80,self.Ymat)
+        Pb, Pd, Kd =find_dyn_parm_deps(self.ndof,80,self.Ymat)
         K = Pb.T +Kd @Pd.T
 
         Y_r, taus1, Y_fri1 = self.get_Yb_matrix(positions, velocities, efforts, Pb)
@@ -650,30 +550,24 @@ class Estimator():
 
         opts = {
             'ipopt': {
-                'max_iter': 5000,  # 提高最大迭代次数
-                'tol': 1e-10,  # 更严格的容忍度
-                'constr_viol_tol': 1e-9,  # 约束违反容差
-                'compl_inf_tol': 1e-9,  # 互补性条件容差
-                'acceptable_tol': 1e-8,  # 更严格的可接受容忍度
-                'acceptable_iter': 20,  # 提高可接受的最大迭代次数
-                'linear_solver': 'mumps',  # 或 'ma57', 'mumps'，选择最适合的求解器
-                'mu_strategy': 'adaptive',  # 自适应 mu 策略
-                'dual_inf_tol': 1e-10,  # 更严格的对偶可行性容忍度
-                'compl_inf_tol': 1e-10,  # 更严格的互补性容忍度
-                'bound_relax_factor': 0,  # 防止约束松弛
-                'hessian_approximation': 'exact',  # 使用精确的 Hessian，不使用近似
+                'max_iter': 5000,  
+                'tol': 1e-10,  
+                'constr_viol_tol': 1e-9,  
+                'compl_inf_tol': 1e-9,  
+                'acceptable_tol': 1e-8,  
+                'acceptable_iter': 20,  
+                'linear_solver': 'mumps',  
+                'mu_strategy': 'adaptive', 
+                'dual_inf_tol': 1e-10,  
+                'compl_inf_tol': 1e-10,  
+                'bound_relax_factor': 0,  
+                'hessian_approximation': 'exact',  
             },
-            'verbose': False,  # 如果需要调试信息，可以设置为 True
+            'verbose': False,  
         }
 
-        # 创建求解器
         solver = cs.nlpsol('S', 'ipopt', problem, opts)
-        # solver = cs.nlpsol('S', 'ipopt', problem,
-        #               {'ipopt':{'max_iter':1000 }, 
-        #                'verbose':False,
-        #                "ipopt.hessian_approximation":"limited-memory"
-        #                })
-        
+
 
 
 
@@ -688,11 +582,7 @@ class Estimator():
                                             mass_center_norminal,
                                             intertia_norminal,
                                             nj)
-        # gt_x0 = mass_norminal.tolist()+mass_center_norminal.tolist()+intertia_norminal.tolist()+[0.1]*nj+[0.5]*nj
 
-
-        # init_x0 = [random.randint(0, 10) for _ in range(len(gt_x0))]
-        import random
         init_x0 = (
             mass_norminal*np.random.uniform(0.0, 2.0, size=mass_norminal.shape)
             ).tolist()+(
@@ -708,7 +598,7 @@ class Estimator():
 
     def timer_cb_regressor(self, positions, velocities, efforts):
         
-        Pb, Pd, Kd =find_dyn_parm_deps(7,80,self.Ymat)
+        Pb, Pd, Kd =find_dyn_parm_deps(self.ndof,80,self.Ymat)
         K = Pb.T +Kd @Pd.T
 
         # q_nps = []
@@ -719,17 +609,17 @@ class Estimator():
         Y_fri = []
         # init_para = np.random.uniform(0.0, 0.1, size=50)
         
-        # filter_list = [TD_2order(T=0.01) for i in range(7)]
+        # filter_list = [TD_2order(T=0.01) for i in range(self.ndof)]
         # filter_vector = TD_list_filter(T=0.01)
         for k in range(0,len(positions),1):
             # print("q_np = {0}".format(q_np))
             # q_np = np.random.uniform(-1.5, 1.5, size=7)
-            q_np = [positions[k][i] for i in Order]
+            q_np = [positions[k][i] for i in self.order]
             # print("velocities[k] = {0}".format(velocities[k]))
-            qd_np = [velocities[k][i] for i in Order]
-            tau_ext = [efforts[k][i] for i in Order]
+            qd_np = [velocities[k][i] for i in self.order]
+            tau_ext = [efforts[k][i] for i in self.order]
 
-            qdlast_np = [velocities[k-1][i] for i in Order]
+            qdlast_np = [velocities[k-1][i] for i in self.order]
             
             qdd_np = (np.array(qd_np)-np.array(qdlast_np))/0.01
             qdd_np = qdd_np.tolist()
@@ -774,12 +664,13 @@ class Estimator():
  
         
 
-        estimate_cs = cs.SX.sym('para', pa_size+14)
+        friction_param_count = 2 * self.ndof
+        estimate_cs = cs.SX.sym('para', pa_size + friction_param_count)
         obj = cs.sumsqr(taus1 - Y @ estimate_cs)
 
 
-        lb = -3.0*np.array([1.0]*(pa_size+14))
-        ub = 3.0*np.array([1.0]*(pa_size+14))
+        lb = -3.0*np.ones(pa_size + friction_param_count)
+        ub = 3.0*np.ones(pa_size + friction_param_count)
 
         print("self.masses_npv", self.masses_np.shape)
        
@@ -807,14 +698,14 @@ class Estimator():
     
     def testWithEstimatedParaIDyn(self, positions, velocities, para_gt, para)->None:
 
-        Pb, Pd, Kd =find_dyn_parm_deps(7,80,self.Ymat)
+        Pb, Pd, Kd =find_dyn_parm_deps(self.ndof,80,self.Ymat)
         K = Pb.T +Kd @Pd.T
 
         tau_ests = []
         es = []
         tau_exts = []
 
-        filter_list = [TD_2order(T=0.01) for i in range(7)]
+        filter_list = [TD_2order(T=0.01) for _ in range(self.ndof)]
         _w1, _h1 =self.massesCenter_np.shape
         _w2, _h2 =self.Inertia_np.shape
         _w0 = len(self.masses_np)
@@ -833,11 +724,11 @@ class Estimator():
         for k in range(1,len(positions),1):
 
 
-            q_np = [positions[k][i] for i in Order]
-            qd_np = [velocities[k][i] for i in Order]
-            # tau_ext = [efforts[k][i] for i in Order]
+            q_np = [positions[k][i] for i in self.order]
+            qd_np = [velocities[k][i] for i in self.order]
+            # tau_ext = [efforts[k][i] for i in self.order]
 
-            qdlast_np = [velocities[k-1][i] for i in Order]
+            qdlast_np = [velocities[k-1][i] for i in self.order]
             qdd_np = (np.array(qd_np)-np.array(qdlast_np))/0.01#(velocities[k][0]-velocities[k-1][0])
 
             # qdd_np = [f(qd_np[id])[1] for id,f in enumerate(filter_list)]
@@ -875,13 +766,13 @@ class Estimator():
     
     def testWithEstimatedParaCon(self, positions, velocities, efforts, para)->None:
 
-        Pb, Pd, Kd =find_dyn_parm_deps(7,80,self.Ymat)
+        Pb, Pd, Kd =find_dyn_parm_deps(self.ndof,80,self.Ymat)
         K = Pb.T +Kd @Pd.T
 
         tau_ests = []
         es = []
 
-        filter_list = [TD_2order(T=0.01) for i in range(7)]
+        filter_list = [TD_2order(T=0.01) for _ in range(self.ndof)]
         _w1, _h1 =self.massesCenter_np.shape
         _w2, _h2 =self.Inertia_np.shape
         _w0 = len(self.masses_np)
@@ -896,11 +787,11 @@ class Estimator():
         for k in range(1,len(positions),1):
 
 
-            q_np = [positions[k][i] for i in Order]
-            qd_np = [velocities[k][i] for i in Order]
-            tau_ext = [efforts[k][i] for i in Order]
+            q_np = [positions[k][i] for i in self.order]
+            qd_np = [velocities[k][i] for i in self.order]
+            tau_ext = [efforts[k][i] for i in self.order]
 
-            qdlast_np = [velocities[k-1][i] for i in Order]
+            qdlast_np = [velocities[k-1][i] for i in self.order]
             qdd_np = (np.array(qd_np)-np.array(qdlast_np))/0.01#(velocities[k][0]-velocities[k-1][0])
 
             # qdd_np = [f(qd_np[id])[1] for id,f in enumerate(filter_list)]
@@ -925,40 +816,28 @@ class Estimator():
     
     def testWithEstimatedPara(self, positions, velocities, efforts, para)->None:
 
-        Pb, Pd, Kd =find_dyn_parm_deps(7,80,self.Ymat)
+        Pb, Pd, Kd =find_dyn_parm_deps(self.ndof,80,self.Ymat)
         K = Pb.T +Kd @Pd.T
 
         tau_ests = []
         es = []
 
-        filter_list = [TD_2order(T=0.01) for i in range(7)]
+        filter_list = [TD_2order(T=0.01) for _ in range(self.ndof)]
         for k in range(1,len(positions),1):
-            # q_np = positions[k][4,1,2,3,5,6,7]
-            # qd_np = velocities[k][4,1,2,3,5,6,7]
-            # tau_ext = efforts[k][4,1,2,3,5,6,7]
-            # qdd_np = (np.array(velocities[k][4,1,2,3,5,6,7])-np.array(velocities[k-1][4,1,2,3,5,6,7]))/(velocities[k][0]-velocities[k-1][0])
-            # qdd_np = qdd_np.tolist()
+            q_np = [positions[k][i] for i in self.order]
+            qd_np = [velocities[k][i] for i in self.order]
+            tau_ext = [efforts[k][i] for i in self.order]
 
-            q_np = [positions[k][i] for i in Order]
-            qd_np = [velocities[k][i] for i in Order]
-            tau_ext = [efforts[k][i] for i in Order]
-
-            qdlast_np = [velocities[k-1][i] for i in Order]
+            qdlast_np = [velocities[k-1][i] for i in self.order]
             qdd_np = (np.array(qd_np)-np.array(qdlast_np))/0.01#(velocities[k][0]-velocities[k-1][0])
-            # qdd_np = qdd_np.tolist()
-            # qdd_np = (np.array(qd_np)-np.array(qdlast_np))/0.01
-            # qdd_np = qdd_np.tolist()
+
             qdd_np = [f(qd_np[id])[1] for id,f in enumerate(filter_list)]
 
-            # tau_ext = self.robot.rnea(q_np,qd_np,qdd_np)
-            # e=self.Ymat(q_np,qd_np,qdd_np)@Pb @ (solution[f"{self.pam_name}/y"] -  K @real_pam)
-            # print("error = {0}".format(e))
 
-            # e=self.Ymat(q_np,qd_np,qdd_np)@Pb @  para - tau_ext 
             pa_size = Pb.shape[1]
             tau_est_model = (self.Ymat(q_np,qd_np,qdd_np) @Pb@  para[:pa_size] + 
-                np.diag(np.sign(qd_np)) @ para[pa_size:pa_size+7]+ 
-                np.diag(qd_np) @ para[pa_size+7:])
+                np.diag(np.sign(qd_np)) @ para[pa_size:pa_size+self.ndof]+ 
+                np.diag(qd_np) @ para[pa_size+self.ndof:pa_size+2*self.ndof])
 
             # without friction
             # tau_est_model = (self.Ymat(q_np,qd_np,qdd_np) @Pb@  para[:pa_size] )
@@ -974,11 +853,7 @@ class Estimator():
 
     def saveEstimatedPara(self, parac)->None:
 
-        path1 = os.path.join(
-            get_package_share_directory("gravity_compensation"),
-            "test",
-            "DynamicParameters.csv",
-        )
+        path1 = config.REGRESSION_OUTPUT_PARAMETERS_PATH
 
         para = parac.toarray().flatten()
         # Pb, Pd, Kd =find_dyn_parm_deps(7,80,self.Ymat)
@@ -994,7 +869,7 @@ def traj_filter(states):
     l=len(states[0])
 
     fs = 100
-    cutoff_freq = 2  # 截止频率为10 Hz
+    cutoff_freq = 2  
     b, a = signal.butter(4, cutoff_freq / (fs / 2), 'low')
     filtered_signal = []
     states_filtered = []
@@ -1047,18 +922,11 @@ def main(args=None):
     rclpy.init(args=args)
     paraEstimator = Estimator()
 
-    path_pos = os.path.join(
-            get_package_share_directory("gravity_compensation"),
-            "test",
-            "robot_data copy 2.csv",
-        )
+    path_pos = config.REGRESSION_MEASUREMENT_PATH
 
     positions, velocities, efforts = paraEstimator.ExtractFromMeasurmentCsv(path_pos)
     velocities=traj_filter(velocities)
     efforts_f=traj_filter(efforts)
-
-
-
     estimate_pam,ref_pam = paraEstimator.timer_cb_regressor_physical_con(positions, velocities, efforts_f)
     print("estimate_pam = {0}".format(estimate_pam))
     tau_exts, es =paraEstimator.testWithEstimatedParaCon(positions, velocities, efforts_f,estimate_pam)
@@ -1066,17 +934,6 @@ def main(args=None):
     compare_traj(tau_exts, efforts_f)
 
 
-    path_pos_2 = os.path.join(
-            get_package_share_directory("gravity_compensation"),
-            "test",
-            "measurements_0dgr.csv",
-        )
-
-    positions_, velocities_, efforts_ = paraEstimator.ExtractFromMeasurmentCsv(path_pos_2)
-    velocities_=traj_filter(velocities_)
-    efforts_f_=traj_filter(efforts_)
-    tau_exts_, es =paraEstimator.testWithEstimatedParaCon(positions_, velocities_, efforts_f_,estimate_pam)
-    compare_traj(tau_exts_, efforts_f_)
 
     rclpy.shutdown()
 

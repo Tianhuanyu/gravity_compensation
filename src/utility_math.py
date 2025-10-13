@@ -38,15 +38,6 @@ def rotation_matrix_to_quaternion(R):
     return np.array([qw, qx, qy, qz])
 
 def quaternion_to_rotation_matrix(q):
-    """
-    将四元数转换为旋转矩阵
-
-    参数：
-    q: 四元数，表示为 [w, x, y, z]
-
-    返回：
-    R: 旋转矩阵，3x3的NumPy数组
-    """
     w, x, y, z = q
     R = np.array([
         [1 - 2*y*y - 2*z*z, 2*x*y - 2*z*w, 2*x*z + 2*y*w],
