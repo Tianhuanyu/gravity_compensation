@@ -11,7 +11,6 @@ import os
 
 import rclpy
 import xacro
-from ament_index_python import get_package_share_directory
 from rclpy import qos
 from rclpy.node import Node
 import csv
@@ -27,6 +26,8 @@ import warnings
 
 from IDmodel import TD_2order, find_dyn_parm_deps, RNEA_function,DynamicLinearlization,getJointParametersfromURDF
 
+import config
+
 def contains_nan(x):
     for i,element in enumerate(np.array(x).flatten()):
         if np.isnan(element):
@@ -36,20 +37,17 @@ def contains_nan(x):
 
 
 def save_to_csv(values_list, filename):
-    # 打开文件，准备写入
     directory = os.path.dirname(filename)
     if not os.path.exists(directory):
         os.makedirs(directory)
     with open(filename, mode='w', newline='') as file:
         writer = csv.writer(file)
-        # 写入二维列表到CSV文件
         writer.writerows(values_list)
     print(f"Data saved to {filename}")
 
 def load_from_csv(filename):
     with open(filename, mode='r') as file:
         reader = csv.reader(file)
-        # 将读取的数据转换为二维列表
         loaded_list = [list(map(float, row)) for row in reader]
     return loaded_list
 
@@ -102,8 +100,6 @@ class FourierSeries():
                  ff = 0.01) -> None:
         assert channel == len(bias), "Different size of Rank and bias!"
         
-        # self.a = cs.SX.sym('a', Rank,channel)
-        # self.b = cs.SX.sym('b', Rank,channel)
         self.Rank = Rank
         self.bias = bias
         self.ff =ff
@@ -140,14 +136,9 @@ class TrajGeneration(Node):
         super().__init__(node_name=node_name)
 
         # self.dt_ = dt_
-        self.declare_parameter("model", "med7")
+        self.declare_parameter("model", config.DEFAULT_TRAJGEN_MODEL)
         self.model_ = str(self.get_parameter("model").value)
-        path = os.path.join(
-            get_package_share_directory("lbr_description"),
-            "urdf",
-            self.model_,
-            f"{self.model_}.urdf.xacro",
-        )
+        path = config.trajgen_model_path(self.model_)
         # self.N = N_
         gv = gravity_vector
         self.initial_model_params(path, gv)
@@ -196,11 +187,7 @@ class TrajGeneration(Node):
 
     
     def ExtractFromMeasurmentCsv(self):
-        path_pos = os.path.join(
-            get_package_share_directory("gravity_compensation"),
-            "test",
-            "measurements_with_ext_tau.csv",
-        )
+        path_pos = config.TRAJGEN_MEASUREMENT_WITH_EXT_TAU_PATH
 
         dt = 0.01
         pos_l = []
@@ -260,11 +247,7 @@ class TrajGeneration(Node):
 
         print(fourierDot)
 
-        path_pos = os.path.join(
-                get_package_share_directory("med7_dock_description"),
-                "meshes",
-                "EndEffector.STL",
-            )
+        path_pos = config.TRAJGEN_MESH_PATH
 
         points = get_convex_hull(path_pos)
         print("points", points)
@@ -423,9 +406,7 @@ class TrajGeneration(Node):
                        "ipopt.hessian_approximation":"limited-memory"
                        })
         _x0_best = None
-        # print("contains_nan = ")
-        # print("g_data kkk = ",kkk)
-        # print("g_data = ",g[kkk:])
+
         x_sample_temp = eps* np.random.random (size= (1,2*Rank*7))
         init_x0 = copy.deepcopy(x_sample_temp)
         a_init, b_init =  np.split(x_sample_temp.reshape(2*Rank,7),2)
@@ -621,11 +602,7 @@ class TrajGeneration(Node):
             qdd_list.append(cs.vertcat(*[optas.substitute(id, t, tc) for id in fourierDDot]))
 
         # 3. Self-Collision Avoidance
-        path_pos = os.path.join(
-                get_package_share_directory("med7_dock_description"),
-                "meshes",
-                "EndEffector.STL",
-            )
+        path_pos = config.TRAJGEN_MESH_PATH
 
         points = get_convex_hull(path_pos)
         vfs_fun = []
@@ -741,11 +718,7 @@ class TrajGeneration(Node):
 
         print(fourierDot)
 
-        path_pos = os.path.join(
-                get_package_share_directory("med7_dock_description"),
-                "meshes",
-                "EndEffector.STL",
-            )
+        path_pos = config.TRAJGEN_MESH_PATH
 
         points = get_convex_hull(path_pos)
         # print("points", points)
@@ -929,7 +902,7 @@ class TrajGeneration(Node):
         
         assert a.shape == b.shape
         if path is None:
-            path1 = "/tmp/target_joint_states.csv"
+            path1 = config.DEFAULT_TARGET_TRAJECTORY_PATH
         else:
             path1 = path
 
@@ -1173,12 +1146,7 @@ class TrajGenerationUsrPath(TrajGeneration):
 def mainO(args=None):
     rclpy.init(args=args)
 
-    path_xarm = os.path.join(
-            get_package_share_directory("gravity_compensation"),
-            "urdf",
-            "xarm",
-            "xarm7base.urdf.xacro",
-        )
+    path_xarm = config.XARM_URDF_PATH
     
     # path_xarm = os.path.join(
     #         get_package_share_directory("lbr_description"),

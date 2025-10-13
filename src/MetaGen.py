@@ -20,11 +20,7 @@ from utility_math import csv_save
 from TrajGeneration import TrajGenerationUsrPath
 from trajsimulation import TrajectoryConductionSim
 import matplotlib.pyplot as plt
-
-
 sys.path.append('/home/thy/learningDynModel')
-# import torch
-from er_app import er_state_compensator
 
 
 def generate_excitation_sat_path(robot_urdf:str,
@@ -40,7 +36,6 @@ def generate_excitation_sat_path(robot_urdf:str,
     S,lbg,ubg,fc = traj_instance.get_optimization_problem(Ff = Ff,sampling_rate = inopt_rate, bias = [theta1, theta2, 0.0, 0.0, 0.0, 0.0, 0.0])
     while(conditional_num>cond_th):
         a,b = traj_instance.find_optimal_point_with_randomstart(S,lbg,ubg, Rank=5)
-        # print("a = {0} \n b = {1}".format(a,b))
         eigenvalues, eigenvectors = np.linalg.eig(fc(a,b))
         conditional_num = np.sqrt(eigenvalues[0]/eigenvalues[-1])
         values_list,keys = traj_instance.generateToList(a,b,Ff = Ff,sampling_rate=output_rate)
@@ -56,9 +51,7 @@ def process_regression_data(data, prefix, filename, paraEstimator, traj_type='tr
     else:
         raise ValueError("Not define the type" + traj_type)
     efforts_f = efforts
-    # 可以根据需要取消注释以滤除噪音
-    # velocities = traj_filter(velocities)
-    # efforts_f = traj_filter(efforts)
+
     ref_pam = paraEstimator.get_gt_params_simO()
     
     estimate_pam, ref_pam = paraEstimator.timer_cb_regressor_physical_con(positions, velocities, efforts_f)

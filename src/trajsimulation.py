@@ -26,13 +26,12 @@ from optas.spatialmath import *
 from IDmodel import TD_2order, TD_list_filter,find_dyn_parm_deps, RNEA_function,DynamicLinearlization,getJointParametersfromURDF
 import urdf_parser_py.urdf as urdf
 
+import config
+
 def get_axis_torque(axis, torques):
-    # 轴的方向
     ax, ay, az = axis
-    # 对应的力矩值
     mx, my, mz = torques
     
-    # 根据轴方向获取力矩值
     if ax != 0:
         return mx if ax > 0 else -mx
     elif ay != 0:
@@ -40,7 +39,7 @@ def get_axis_torque(axis, torques):
     elif az != 0:
         return mz if az > 0 else -mz
     else:
-        return 0  # 如果轴方向为 [0, 0, 0]，返回 0
+        return 0  
     
 def calculate_joint_accelerations(joint_velocities_1, joint_velocities_2, delta_time):
     joint_accelerations = [(v2 - v1) / delta_time for v1, v2 in zip(joint_velocities_1, joint_velocities_2)]
@@ -102,19 +101,13 @@ class TrajectoryConductionSim(Node):
                 file_name,
                 resource_list,
                 is_traj_from_path=True,
-                traj_data="/home/thy/target_joint_states.csv",
+                traj_data=config.DEFAULT_TARGET_TRAJECTORY_PATH,
                 gravity_vector=[0, 0, -9.81],
                 use_gui = True
                 ) -> None:
         
 
-        # resource_path1 = os.path.join(
-        #             get_package_share_directory("med7_dock_description")
-        #         )
-        # resource_path2 = os.path.join(
-        #             get_package_share_directory("lbr_description")
-        #         )
-        # print("RUn to here")
+
         if use_gui == False:
             p.connect(p.DIRECT)
         else:
@@ -124,18 +117,13 @@ class TrajectoryConductionSim(Node):
         p.setGravity(*gravity_vector)
         for path in resource_list:
             p.setAdditionalSearchPath(path)
-            print("path = ",path)
         # p.setAdditionalSearchPath(resource_path2)
 
 
         xacro_file = file_name
         replace_package_paths_in_xacro(xacro_file)
-        # time.sleep(1)
-        print("run to here")
-        # file_name = 'med7dock.urdf'
-        print("file_name =",file_name)
         robot_id = p.loadURDF(file_name, useFixedBase=True)
-        print("run to here")
+
 
         for joint_index in range(p.getNumJoints(robot_id)):
             p.enableJointForceTorqueSensor(robot_id, joint_index, enableSensor=1)
@@ -196,10 +184,7 @@ class TrajectoryConductionSim(Node):
         
         self.Pb = Pb
 
-        # print("self.estimate_gt = ",self.estimate_gt.shape)
-        # print("self.params 2 = ",self.params[-7:])
 
-        # raise ValueError("1111")
 
 
     def inverse_dynamics(self, q_np, qd_np, qdd_np):
@@ -209,11 +194,6 @@ class TrajectoryConductionSim(Node):
                 np.diag(np.sign(qd_np)) @ self.params[-2*len(qd_np):-len(qd_np)]+ 
                 np.diag(qd_np) @ self.params[-len(qd_np):])
         return tau_ext.full().flatten()
-
-
-
-    # def __del__(self):
-    #     p.disconnect()
 
 
     
@@ -266,10 +246,8 @@ class TrajectoryConductionSim(Node):
 
         num_samples = 1000
 
-        # 创建空数组来存储采样点
-        samples = np.empty((num_samples, len(joint_lower_limit)))
 
-        # 遍历每个维度，根据上下界进行均匀采样
+        samples = np.empty((num_samples, len(joint_lower_limit)))
         data =[]
         for i in range(len(joint_lower_limit)):
             samples[:, i] = np.random.uniform(joint_lower_limit[i], joint_upper_limit[i], num_samples)
@@ -282,19 +260,6 @@ class TrajectoryConductionSim(Node):
 
             for index, joint in enumerate(self.non_fixed_joints):
                 p.resetJointState(self.robot_id, joint, target_positions[index])
-            # for index, joint in enumerate(self.non_fixed_joints):
-            #     # print("joint = ",joint)
-            #     # p.setJointMotorControl2(self.robot_id, joint, p.TORQUE_CONTROL, 0.0)
-            #     # p.setJointMotorControl2(self.robot_id, joint, p.POSITION_CONTROL, target_positions[index])
-            #     p.setJointMotorControl2(self.robot_id, joint, p.VELOCITY_CONTROL, 0.0)
-            # p.stepSimulation()
-
-            # 进行多次仿真步进，让机器人达到稳定状态
-            # for index, joint in enumerate(self.non_fixed_joints):
-            #     p.resetJointState(self.robot_id, joint, target_positions[index])
-            # p.stepSimulation()
-            # for _ in range(500):  # 可以调整步数
-            #     p.stepSimulation()
             js_infos = []
             for id in self.non_fixed_joints:
                 js_info = p.getJointInfo(self.robot_id, id)
@@ -313,21 +278,12 @@ class TrajectoryConductionSim(Node):
                 joint_torques = p.calculateInverseDynamics(self.robot_id, joint_positions, joint_vels, _accelerations)
             else:
                 joint_torques = self.inverse_dynamics(joint_positions, joint_vels,_accelerations)
-            # joint_forces = [-get_axis_torque( js_info,state[2][3:]) for state, js_info in zip(joint_states,js_infos)]
 
-            # print("joint_torques =",joint_torques)
-            # print("joint_forces =",joint_forces)
-
-            # raise ValueError("111")
             data.append(joint_positions + list(joint_torques))
 
         return data
 
-        # print(
-        #     "data", data
-        # )
 
-        # print("samples = ",samples_list)
         
 
 
@@ -339,30 +295,23 @@ class TrajectoryConductionSim(Node):
         for index, joint in enumerate(self.non_fixed_joints):
             p.enableJointForceTorqueSensor(self.robot_id, joint, enableSensor=True)
 
-        # 模拟一系列位置控制
+
         data =[]
         joint_vels_last = [0.0]*len(self.non_fixed_joints)
 
         
         for step in range(len(self.qs_des_)):
-            # 示例：随机设置关节目标位置
-            # print("qs_des_")
+
             target_positions = self.qs_des_[step]
             for index, joint in enumerate(self.non_fixed_joints):
                 p.resetJointState(self.robot_id, joint, target_positions[index])
-            # for index, joint in enumerate(self.non_fixed_joints):
-            #     p.setJointMotorControl2(self.robot_id, joint, p.POSITION_CONTROL, target_positions[index])
 
-            # 执行一步仿真
+
             p.stepSimulation()
-
-            # 收集并记录关节的位置和力
             js_infos = []
             for id in self.non_fixed_joints:
                 js_info = p.getJointInfo(self.robot_id, id)
-                # print ("joint_info[13] = ", js_info[13])
                 js_infos.append(js_info[13])
-            # raise ValueError("111")
 
             joint_states = p.getJointStates(self.robot_id, self.non_fixed_joints)
             joint_positions = [state[0] for state in joint_states]
@@ -372,26 +321,15 @@ class TrajectoryConductionSim(Node):
             _accelerations = calculate_joint_accelerations(joint_vels, joint_vels_last, 0.01)
             joint_vels_last = joint_vels
 
-
-            #TODO
             if self.params is None:
                 joint_torques = p.calculateInverseDynamics(self.robot_id, joint_positions, joint_vels, _accelerations)
             else:
                 joint_torques = self.inverse_dynamics(joint_positions, joint_vels,_accelerations)
-                
-            # joint_forces = [-get_axis_torque( js_info,state[2][3:]) for state, js_info in zip(joint_states,js_infos)]
             data.append(joint_positions + list(joint_torques))
-            # print("joint_forces = ",joint_forces)
 
-            # 等待一小段时间（根据实际情况调整）
             time.sleep(1. / 100.)
         return data
 
-        # with open(name, 'w', newline='') as file:
-        #     writer = csv.writer(file)
-        #     writer.writerow(['Joint1_Pos', 'Joint2_Pos', 'Joint3_Pos', 'Joint4_Pos', 'Joint5_Pos', 'Joint6_Pos', 'Joint7_Pos', 
-        #                     'Joint1_Force', 'Joint2_Force', 'Joint3_Force', 'Joint4_Force', 'Joint5_Force', 'Joint6_Force','Joint7_Force'])
-        #     writer.writerows(data)
 
 
 
@@ -400,27 +338,24 @@ class TrajectoryConductionSim(Node):
             p.resetJointState(self.robot_id, joint, self.qs_des_[0][index])
         print("non_fixed_joints = ",self.non_fixed_joints)
 
-        # 模拟一系列位置控制
         data =[]
         for step in range(len(self.qs_des_)):
-            # 示例：随机设置关节目标位置
-            # print("qs_des_")
+
             target_positions = self.qs_des_[step]
             for index, joint in enumerate(self.non_fixed_joints):
-                # print("joint = ",joint)
+
                 p.setJointMotorControl2(self.robot_id, joint, p.POSITION_CONTROL, target_positions[index])
 
-            # 执行一步仿真
+
             p.stepSimulation()
 
-            # 收集并记录关节的位置和力
             joint_states = p.getJointStates(self.robot_id, self.non_fixed_joints)
             joint_positions = [state[0] for state in joint_states]
             joint_forces = [state[2][5] for state in joint_states]
             data.append(joint_positions + joint_forces)
             print("joint_forces = ",joint_forces)
 
-            # 等待一小段时间（根据实际情况调整）
+
             time.sleep(1. / 100.)
 
         with open(name, 'w', newline='') as file:
@@ -429,9 +364,6 @@ class TrajectoryConductionSim(Node):
                             'Joint1_Force', 'Joint2_Force', 'Joint3_Force', 'Joint4_Force', 'Joint5_Force', 'Joint6_Force','Joint7_Force'])
             writer.writerows(data)
 
-        # 断开PyBullet
-        # p.disconnect()
-            
 
     def set_gravity_vector(self, vector = [0.0, 0.0, -9.81]):
         p.setGravity(*vector)
@@ -448,19 +380,15 @@ class TrajectoryConductionSim(Node):
 
 
 def generateURDF():
-    resource_path1 = os.path.join(
-                get_package_share_directory("med7_dock_description")
-            )
-    resource_path2 = os.path.join(
-                get_package_share_directory("lbr_description")
-            )
-    package_paths = ["package://lbr_description", "package://med7_dock_description","damping=\"10.0\""]
+    resource_path1 = config.MED7_DOCK_DESCRIPTION_SHARE
+    resource_path2 = config.LBR_DESCRIPTION_SHARE
+    package_paths = [
+        "package://lbr_description",
+        "package://med7_dock_description",
+        "damping=\"10.0\"",
+    ]
     actual_paths = [resource_path2, resource_path1,"damping=\"0.1\""]
-    xacro_filename = os.path.join(
-            get_package_share_directory("med7_dock_description"),
-            "urdf",
-            "med7dock.urdf.xacro",
-        )
+    xacro_filename = config.REGRESSION_MODEL_PATH
     
     generateURDFwithReplace(xacro_filename, "med7dock.urdf",package_paths,actual_paths)
 
@@ -469,64 +397,25 @@ def generateURDF():
 def generateURDFwithReplace(xacro_filename, urdf_path, package_list, actual_list):
     urdf_string = xacro.process(xacro_filename)
 
-    # 使用str.replace()替换路径
+
     for package_path, actual_path in zip(package_list, actual_list):
         urdf_string = urdf_string.replace(package_path, actual_path)
 
-    # 定义要保存的文件名
-    # file_name = "med7dock.urdf"
-
-    # 使用with语句打开文件，确保文件正确关闭
     with open(urdf_path, "w") as file:
         file.write(urdf_string)
 
 
-
-
-    # # package_path = "package://med7_dock_description"
-    # # actual_path = resource_path1
-    # urdf_string = urdf_string.replace(package_path, actual_path)
-
-
-
-    # # package_path = "damping=\"10.0\""
-    # # actual_path = "damping=\"0.1\""
-    # urdf_string = urdf_string.replace(package_path, actual_path)
-
-
-
-
-
-
-            
-
-
 def main(args=None):
     rclpy.init(args=args)
-    file_name = os.path.join(
-            get_package_share_directory("gravity_compensation"),
-            "urdf",
-            "med",
-            "med7dock.urdf"
-        )
-    paths = [
-        os.path.join(
-            get_package_share_directory("med7_dock_description")
-        ),
-        os.path.join(
-            get_package_share_directory("lbr_description")
-        ),
-        os.path.join(
-            get_package_share_directory("gravity_compensation"),
-            "urdf",
-            "med"
-        )
-    ]
-    instance = TrajectoryConductionSim(file_name, paths,traj_data = '/tmp/target_joint_states.csv')
+    file_name = config.TRAJSIM_MED_URDF_PATH
+    paths = list(config.TRAJSIM_RESOURCE_PATHS)
+    instance = TrajectoryConductionSim(
+        file_name,
+        paths,
+        traj_data=config.DEFAULT_TARGET_TRAJECTORY_PATH,
+    )
     instance.set_friction_params()
     instance.run_sim()
-    # instance.set_gravity_vector([4.905, 0.0, -8.496])
-    # instance.run_sim()
     rclpy.shutdown()
     
 
@@ -535,4 +424,3 @@ def main(args=None):
 
 if __name__ == "__main__":
     main()
-

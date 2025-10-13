@@ -82,16 +82,9 @@ def main(args=None):
         print("a = {0} \n b = {1}".format(a,b))
         eigenvalues, eigenvectors = np.linalg.eig(fc(a,b))
         conditional_num = np.sqrt(eigenvalues[0]/eigenvalues[-1])
-        # print("conditional_num_best = ",conditional_num)
 
         values_list,keys = traj_instance.generateToList(a,b,Ff = Ff,sampling_rate=sampling_rate)
 
-        # if keys:
-        # print("Done! Congratulations! self-collision avoidance")
-        
-
-        # print("fc = ",eigenvalues)
-        # print("a = {0} \n b = {1}".format(a,b))
 
         instance.import_traj_fromlist(values_list)
         instance.set_friction_params()

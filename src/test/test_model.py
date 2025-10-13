@@ -53,7 +53,6 @@ def main(args=None):
     gravity_vec = [0.0, 0.0, -9.81] #[4.905, 0.0, -8.496]
     theta1 = 0.0
     theta2 = -0.5233
-
     Ff = 0.1
     sampling_rate = 100.0
     sampling_rate_inoptimization = 20.0
@@ -128,31 +127,7 @@ def main(args=None):
         outputs.append(output)
         errs.append(err.tolist())
 
-    
-
-        # print("output = ",output)
-        # print("err = ",err.tolist())
-
-
-
-
-
-
-
-
-
-        # for d in data:
-        #     csv_saveCreate(prefix+"{0}".format(i)+"/data.csv", 
-        #             d
-        #             )
-    # paraEstimator.saveEstimatedPara(estimate_pam)
-    # print("tau_exts = ",tau_exts)
     compare_traj(outputs, errs)
-
-
-
-
-
 
 
     rclpy.shutdown()
