@@ -138,7 +138,7 @@ class TrajGeneration(Node):
         # self.dt_ = dt_
         self.declare_parameter("model", config.DEFAULT_TRAJGEN_MODEL)
         self.model_ = str(self.get_parameter("model").value)
-        path = config.trajgen_model_path(self.model_)
+        path = config.TRAJGEN_MODEL_PATH
         # self.N = N_
         gv = gravity_vector
         self.initial_model_params(path, gv)
@@ -235,10 +235,10 @@ class TrajGeneration(Node):
 
         return a, b, t, fourier, fourier_dot, fourier_ddot, q_list, qd_list, qdd_list
 
-    def _self_collision_functions(self):
+    def _self_collision_functions(self, mesh_path=config.TRAJGEN_MESH_PATH):
         """Generate and cache self-collision constraint functions."""
         if not hasattr(self, "_collision_constraints"):
-            points = get_convex_hull(config.TRAJGEN_MESH_PATH)
+            points = get_convex_hull(mesh_path)
             print("points", points)
             self._collision_constraints = [
                 getConstraintsinJointSpace(
@@ -1058,9 +1058,7 @@ class TrajGenerationUsrPath(TrajGeneration):
 def mainO(args=None):
     rclpy.init(args=args)
 
-    path_xarm = config.XARM_URDF_PATH
-    
-
+    path_xarm = config.TRAJGEN_MODEL_PATH
     paraEstimator = TrajGenerationUsrPath(path=path_xarm, gravity_vector=[0,0,-9.81])
     Ff = 0.1
     sampling_rate = 100.0

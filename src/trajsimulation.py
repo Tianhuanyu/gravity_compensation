@@ -149,7 +149,7 @@ class TrajectoryConductionSim(Node):
             xacro_filename=file_name,
             time_derivs=[1],  # i.e. joint velocity
         )
-        Nb, xyzs, rpys, axes = getJointParametersfromURDF(self.robot)
+        Nb, xyzs, rpys, axes = getJointParametersfromURDF(self.robot,config.EE_LINK_NAME)
         self.dynamics_ = RNEA_function(Nb,1,rpys,xyzs,axes,gravity_para = cs.DM(gravity_vector))
         self.Ymat, self.PIvector = DynamicLinearlization(self.dynamics_,Nb)
 
