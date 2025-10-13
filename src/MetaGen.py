@@ -71,16 +71,10 @@ def process_identificate_data(data, paraEstimator, traj_type='traj'):
     else:
         raise ValueError("Not define the type" + traj_type)
     efforts_f = efforts
-    # 可以根据需要取消注释以滤除噪音
-    # velocities = traj_filter(velocities)
-    # efforts_f = traj_filter(efforts)
+
     
     estimate_pam, ref_pam = paraEstimator.timer_cb_regressor_physical_con(positions, velocities, efforts_f)
-    # tau_ests, tau_exts = paraEstimator.testWithEstimatedParaIDyn(positions, velocities, estimate_pam, ref_pam)
-    # processed_data = combine_input_output(positions[1:], velocities[1:], tau_exts, tau_ests)
-    
-    # for d in processed_data:
-    #     csv_saveCreate(f"{prefix}/{filename}", d)
+
 
     return estimate_pam, ref_pam
 
@@ -91,11 +85,7 @@ def process_data_with_given_params(data, prefix, filename, paraEstimator, estima
         positions, velocities, _ = paraEstimator.ExtractFromMeasurmentListZeroVel(data)
     else:
         raise ValueError("Not define the type" + traj_type)
-    # 可以根据需要取消注释以滤除噪音
-    # velocities = traj_filter(velocities)
-    # efforts_f = traj_filter(efforts)
-    
-    # estimate_pam, ref_pam = paraEstimator.timer_cb_regressor_physical_con(positions, velocities, efforts_f)
+
     tau_ests, tau_exts = paraEstimator.testWithEstimatedParaIDyn(positions, velocities, estimate_pam, ref_pam)
     processed_data = combine_input_output(positions[1:], velocities[1:], tau_exts, tau_ests)
     
@@ -124,22 +114,13 @@ def view_channels(*measurements_list):
         for mes in measurements:
             for i in range(len(DISPLAY)):
                 pos[i].append(mes[DISPLAY[i]])
-                # pos[1].append(mes[DISPLAY[1]])
-                # pos[2].append(mes[DISPLAY[2]])
+
     
         for j in range(K):
-            plt.subplot(K+1, 1, j+1)  # 三行一列，当前激活的是第一个图
-            plt.plot(pos[j])  # '-r' 表示红色实线
+            plt.subplot(K+1, 1, j+1)  
+            plt.plot(pos[j])  
             plt.grid(True)
-        # plt.legend(loc='traj'+str(i))
 
-        # plt.subplot(3, 1, 2)  # 三行一列，当前激活的是第一个图
-        # plt.plot(pos[1])  # '-r' 表示红色实线
-        # # plt.legend(loc='traj'+str(i))
-
-        # plt.subplot(3, 1, 3)  # 三行一列，当前激活的是第一个图
-        # plt.plot(pos[2])  # '-r' 表示红色实线
-        # # plt.legend(loc='traj'+str(i))
     # 自动调整子图间距
     plt.tight_layout()
     # 显示图形
@@ -252,45 +233,6 @@ def main(args=None):
             csv_saveCreate(prefix+"{0}".format(i)+"/data_qry.csv", 
                     d
                     )
-
-    # nn_cp = er_state_compensator("/home/thy/learningDynModel/vae_simple_1_VAE_CNN3.pth")
-
-    # outputs =[]
-    # errs =[]
-    # for p,v,e,ep in zip(positions, velocities, efforts_f, tau_exts):
-    #     data_input = p+v+e
-    #     output = nn_cp.predict(data_input)
-
-    #     err = np.asarray(ep)-np.asarray(e)
-    #     outputs.append(output)
-    #     errs.append(err.tolist())
-
-    
-
-        # print("output = ",output)
-        # print("err = ",err.tolist())
-
-
-
-
-
-
-
-
-
-        # for d in data:
-        #     csv_saveCreate(prefix+"{0}".format(i)+"/data.csv", 
-        #             d
-        #             )
-    # paraEstimator.saveEstimatedPara(estimate_pam)
-    # print("tau_exts = ",tau_exts)
-    # compare_traj(outputs, errs)
-
-
-
-
-
-
 
     rclpy.shutdown()
 

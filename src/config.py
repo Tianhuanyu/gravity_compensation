@@ -13,6 +13,8 @@ from ament_index_python import get_package_share_directory
 GRAVITY_COMPENSATION_SHARE = get_package_share_directory("gravity_compensation")
 MED7_DOCK_DESCRIPTION_SHARE = get_package_share_directory("med7_dock_description")
 LBR_DESCRIPTION_SHARE = get_package_share_directory("lbr_description")
+PACKAGE_SRC_DIR = os.path.dirname(__file__)
+DEFAULT_TARGET_TRAJECTORY_PATH = "/tmp/target_joint_states.csv"
 
 # ---------------------------------------------------------------------------
 # Regression (parameter estimation) resources
@@ -23,23 +25,18 @@ REGRESSION_MODEL_PATH = os.path.join(
     "med7dock.urdf.xacro",
 )
 
-REGRESSION_PRIMARY_MEASUREMENT_PATH = os.path.join(
-    GRAVITY_COMPENSATION_SHARE,
-    "test",
-    "robot_data copy 2.csv",
-)
-
-REGRESSION_SECONDARY_MEASUREMENT_PATH = os.path.join(
-    GRAVITY_COMPENSATION_SHARE,
-    "test",
-    "measurements_0dgr.csv",
+REGRESSION_MEASUREMENT_PATH = os.path.join(
+    PACKAGE_SRC_DIR,
+    "data",
+    "robot_data.csv",
 )
 
 REGRESSION_OUTPUT_PARAMETERS_PATH = os.path.join(
-    GRAVITY_COMPENSATION_SHARE,
-    "test",
+    PACKAGE_SRC_DIR,
+    "data",
     "DynamicParameters.csv",
 )
+
 
 # ---------------------------------------------------------------------------
 # Trajectory generation resources
@@ -69,7 +66,6 @@ TRAJGEN_MESH_PATH = os.path.join(
     "EndEffector.STL",
 )
 
-DEFAULT_TARGET_TRAJECTORY_PATH = "/tmp/target_joint_states.csv"
 
 XARM_URDF_PATH = os.path.join(
     GRAVITY_COMPENSATION_SHARE,
@@ -93,3 +89,9 @@ TRAJSIM_RESOURCE_PATHS = [
     LBR_DESCRIPTION_SHARE,
     os.path.join(GRAVITY_COMPENSATION_SHARE, "urdf", "med"),
 ]
+
+TRAJSIM_OUTPUT_CSV_PATH = os.path.join(
+    PACKAGE_SRC_DIR,
+    "data",
+    "robot_data.csv",
+)

@@ -333,7 +333,7 @@ class TrajectoryConductionSim(Node):
 
 
 
-    def run_sim(self, name='robot_data.csv'):
+    def run_sim(self, name=None):
         for index, joint in enumerate(self.non_fixed_joints):
             p.resetJointState(self.robot_id, joint, self.qs_des_[0][index])
         print("non_fixed_joints = ",self.non_fixed_joints)
@@ -358,7 +358,9 @@ class TrajectoryConductionSim(Node):
 
             time.sleep(1. / 100.)
 
-        with open(name, 'w', newline='') as file:
+        output_path = config.TRAJSIM_OUTPUT_CSV_PATH if name is None else name
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        with open(output_path, 'w', newline='') as file:
             writer = csv.writer(file)
             writer.writerow(['Joint1_Pos', 'Joint2_Pos', 'Joint3_Pos', 'Joint4_Pos', 'Joint5_Pos', 'Joint6_Pos', 'Joint7_Pos', 
                             'Joint1_Force', 'Joint2_Force', 'Joint3_Force', 'Joint4_Force', 'Joint5_Force', 'Joint6_Force','Joint7_Force'])
