@@ -12,8 +12,8 @@ from ament_index_python import get_package_share_directory
 # Package share directories
 GRAVITY_COMPENSATION_SHARE = get_package_share_directory("gravity_compensation")
 MED7_DOCK_DESCRIPTION_SHARE = get_package_share_directory("med7_dock_description")
-LBR_DESCRIPTION_SHARE = get_package_share_directory("lbr_description")
 FRANKA_DESCRIPTION_SHARE = get_package_share_directory("franka_panda_description")
+XARM_DESCRIPTION_SHARE = get_package_share_directory("xarm_description")
 PACKAGE_SRC_DIR = os.path.dirname(__file__)
 DEFAULT_TARGET_TRAJECTORY_PATH = "/tmp/target_joint_states.csv"
 
@@ -181,7 +181,6 @@ TRAJSIM_OUTPUT_CSV_PATH = REGRESSION_MEASUREMENT_PATH
 
 TRAJSIM_RESOURCE_PATHS = [
     MED7_DOCK_DESCRIPTION_SHARE,
-    LBR_DESCRIPTION_SHARE,
     FRANKA_DESCRIPTION_SHARE,
     os.path.join(GRAVITY_COMPENSATION_SHARE, "urdf", "med"),
 ]
