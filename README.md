@@ -7,12 +7,12 @@ Tools and scripts for exciting, simulating, and identifying the rigid–body dyn
 ## Project Layout
 
 - `src/config.py` – centralised configuration: robot model selection, trajectory hyper‑parameters, file locations, optimisation objective, and safety toggles.
-- `src/TrajGeneration.py` – builds a CasADi/OptaS optimisation problem that produces minimum‑condition-number excitation trajectories.
-- `src/trajsimulation.py` – replays joint trajectories in PyBullet to synthesise joint efforts and export measurement CSV files.
-- `src/regression.py` – runs weighted least squares on recorded data to recover the minimal set of dynamic parameters.
+- `src/TrajGeneration.py` – builds a CasADi/OptaS optimisation problem that produces minimum‑condition-number excitation trajectories. [step 1]
+- `src/trajsimulation.py` – replays joint trajectories in PyBullet to synthesise joint efforts and export measurement CSV files. [step 2]
+- `src/regression.py` – runs weighted least squares on recorded data to recover the minimal set of dynamic parameters. [step 3]
 - `src/ground_truth_gen_sim.py` – optional end-to-end pipeline combining excitation, simulation, and identification.
-- `src/examples/` – ready‑to‑run examples for different robots and pipelines.
 
+Follow the step 1-2-3 to generate target trajectory csv, force recording, and dynamics identification results.
 ---
 
 ## Requirements
@@ -23,10 +23,9 @@ Tools and scripts for exciting, simulating, and identifying the rigid–body dyn
 - ROS 2 Humble (provides `rclpy`, `xacro`, `ament_index_python`, `urdf_parser_py`, etc.).
 - Access to the robot description packages referenced in `config.py`:
   - `gravity_compensation`
-  - `med7_dock_description`
-  - `lbr_description`
-  - `franka_panda_description`
-  - (optional) `xarm_ros2`
+  - `med7_dock_description` [med7_dock_description](https://github.com/Tianhuanyu/med7_dock_description)
+  - `xarm_description` [xarm_description](https://github.com/xArm-Developer/xarm_ros2)
+  - `franka_panda_description` [franka_panda_description](https://github.com/Tianhuanyu/franka_panda_description)
 
 > Make sure your ROS workspace sources these packages before running any of the scripts.
 
